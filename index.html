@@ -59,6 +59,30 @@
     font-size: 12px;
     margin-top: 4px;
   }
+  #powerupLegend {
+    margin-top: 10px;
+    border-top: 1px solid #4d4d4d;
+    padding-top: 8px;
+  }
+  #powerupLegend h4 {
+    margin: 0 0 6px 0;
+    font-size: 13px;
+    color: #ffe08a;
+  }
+  #powerupLegend .legend-row {
+    font-size: 12px;
+    margin: 3px 0;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  #eventFeed {
+    margin-top: 8px;
+    font-size: 12px;
+    min-height: 18px;
+    color: #d6d6d6;
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.22);
+  }
 </style>
 </head>
 <body>
@@ -76,6 +100,8 @@
     <div>Super Orb: <span id="orbStatus">Not Installed</span></div>
     <div>Bomb Slot: <span id="bombStatus">Empty</span></div>
     <div>Tornado Slot: <span id="tornadoStatus">Empty</span></div>
+    <div id="eventFeed">No powerups triggered yet.</div>
+    <div id="powerupLegend"></div>
   </div>
 
   <canvas id="game" width="860" height="560"></canvas>
@@ -109,6 +135,9 @@ let orbCooldown = 0
 let attachedBombId = null
 let attachedTornadoId = null
 let tornadoAnimations = []
+let powerupWaves = []
+let floatingTexts = []
+let eventFeedText = 'No powerups triggered yet.'
 
 const supportVehicle = {
   unlocked: false,
@@ -117,6 +146,15 @@ const supportVehicle = {
   y: 7,
   timer: 0,
   moveTimer: 0
+}
+
+const carBomb = {
+  active: false,
+  x: 0,
+  y: 0,
+  timer: 0,
+  moveTimer: 0,
+  mined: 0
 }
 
 /* MATERIALS */
@@ -145,7 +183,8 @@ const bombUpgrades = [
   { id: 'tinyBomb', name: 'Tiny Bomb', cost: 180, color: '#ffd166', desc: 'Immediately detonates and destroys 2 tiles all around your vehicle.', kind: 'instant' },
   { id: 'frostBomb', name: 'Frost Bomb', cost: 700, color: '#6bdcff', desc: 'Attach and detonate with P to shatter up to 40 nearby blocks.', kind: 'attach' },
   { id: 'chainBomb', name: 'Chain Bomb', cost: 1250, color: '#ff9f43', desc: 'Attach and detonate with P to trigger chained bursts up to 90 blocks.', kind: 'attach' },
-  { id: 'vortexBomb', name: 'Vortex Bomb', cost: 1700, color: '#b784ff', desc: 'Attach and detonate with P for a focused vortex blast up to 130 blocks.', kind: 'attach' }
+  { id: 'vortexBomb', name: 'Vortex Bomb', cost: 1700, color: '#b784ff', desc: 'Attach and detonate with P for a focused vortex blast up to 130 blocks.', kind: 'attach' },
+  { id: 'carBomb', name: 'Car Bomb', cost: 2200, color: '#7ef2ff', desc: 'Attach and detonate with P to deploy a mining sidecar for 6s; it finishes with a 184-block blast.', kind: 'attach' }
 ]
 
 const tornadoUpgrades = [
@@ -275,9 +314,22 @@ function drawTile(x, y, cell) {
     ctx.fill()
     ctx.globalAlpha = 0.9
     ctx.fillStyle = p.color
+    ctx.strokeStyle = p.glow
+    ctx.lineWidth = 1.2
+    ctx.beginPath()
+    ctx.arc(px + tileSize / 2, py + tileSize / 2, 10 + pulse * 3, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.translate(px + tileSize / 2, py + tileSize / 2)
+    ctx.rotate((Date.now() / 450) + (x + y) * 0.12)
+    ctx.fillStyle = p.glow
+    ctx.fillRect(-1, -12, 2, 24)
+    ctx.rotate(Math.PI / 2)
+    ctx.fillRect(-1, -12, 2, 24)
+    ctx.globalAlpha = 0.9
+    ctx.fillStyle = p.color
     ctx.font = '10px Arial'
     ctx.textAlign = 'center'
-    ctx.fillText(p.symbol, px + tileSize / 2, py + tileSize / 2 + 3)
+    ctx.fillText(p.symbol, 0, 3)
     ctx.restore()
   }
 
@@ -412,6 +464,23 @@ function drawVehicle() {
   if (supportVehicle.active) {
     drawVehicleAt(supportVehicle.x * tileSize, supportVehicle.y * tileSize, Math.max(0.85, vehicleScale * 0.8), true)
   }
+
+  if (carBomb.active) {
+    const px = carBomb.x * tileSize
+    const py = carBomb.y * tileSize
+    ctx.save()
+    ctx.translate(px + tileSize / 2, py + tileSize / 2)
+    ctx.rotate(Math.sin(drillAngle * 0.3) * 0.05)
+    drawVehicleBase('#78ecff', '#84ffe8')
+    ctx.fillStyle = '#7ef2ff'
+    ctx.shadowBlur = 14
+    ctx.shadowColor = '#7ef2ff'
+    ctx.beginPath()
+    ctx.arc(-5, -15, 4.5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.shadowBlur = 0
+    ctx.restore()
+  }
 }
 
 /* PARTICLES */
@@ -442,6 +511,59 @@ function drawParticles() {
     ctx.fillStyle = p.color
     ctx.fillRect(p.x, p.y, 3, 3)
   })
+}
+
+function addFloatingText(message, x, y, color = '#ffffff') {
+  floatingTexts.push({
+    message,
+    x: x * tileSize + tileSize / 2,
+    y: y * tileSize + tileSize / 2,
+    vy: -0.35,
+    life: 90,
+    maxLife: 90,
+    color
+  })
+}
+
+function updateFloatingTexts() {
+  floatingTexts.forEach(text => {
+    text.y += text.vy
+    text.life--
+  })
+  floatingTexts = floatingTexts.filter(text => text.life > 0)
+}
+
+function drawFloatingTexts() {
+  floatingTexts.forEach(text => {
+    const alpha = Math.max(0, text.life / text.maxLife)
+    ctx.save()
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = text.color
+    ctx.font = 'bold 13px Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText(text.message, text.x, text.y)
+    ctx.restore()
+  })
+}
+
+function addPowerupWave(x, y, color) {
+  powerupWaves.push({ x, y, color, age: 0, life: 40 })
+}
+
+function drawPowerupWaves() {
+  powerupWaves.forEach(w => {
+    const t = w.age / w.life
+    ctx.save()
+    ctx.globalAlpha = 0.75 * (1 - t)
+    ctx.strokeStyle = w.color
+    ctx.lineWidth = 4 * (1 - t * 0.7)
+    ctx.beginPath()
+    ctx.arc(w.x * tileSize + tileSize / 2, w.y * tileSize + tileSize / 2, 8 + t * 64, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+    w.age++
+  })
+  powerupWaves = powerupWaves.filter(w => w.age < w.life)
 }
 
 function addExplosionAnimation(x, y, radius, color) {
@@ -520,6 +642,20 @@ function universe(x, y) {
 }
 
 function triggerPowerup(type, x, y) {
+  const labels = {
+    megaBomb: 'Mega Bomb triggered!'
+    , creditCache: 'Credit Cache +850'
+    , drillOverdrive: 'Drill Overdrive engaged!'
+    , quakePulse: 'Quake Pulse activated!'
+    , warpCharge: 'Warp Charge jump!'
+  }
+  const style = powerups[type]
+  if (style) {
+    addPowerupWave(x, y, style.glow)
+    addFloatingText(labels[type] || 'Powerup!', x, y, style.glow)
+    eventFeedText = `${style.symbol} ${labels[type] || 'Powerup triggered!'}`
+  }
+
   if (type === 'megaBomb') {
     addExplosionAnimation(x, y, 7, '#ff5252')
     destroyRandomInRadius(x, y, 7, 146)
@@ -544,6 +680,7 @@ function triggerPowerup(type, x, y) {
   if (type === 'warpCharge') {
     player.x = Math.min(cols - 1, player.x + 3)
     spawnDebris(player.x, player.y, '#83ff9f', 16)
+    checkLevelAdvance()
   }
 }
 
@@ -562,13 +699,17 @@ function dig(x, y, source = 'player') {
     if (currentDrill.ability === 'blackhole') blackhole(x, y)
     if (currentDrill.ability === 'universe') universe(x, y)
     if (currentEngine.ability === 'shock') explosion(x, y)
-    if (currentEngine.ability === 'warp' && source === 'player') player.x = Math.min(cols - 1, player.x + 1)
+    if (currentEngine.ability === 'warp' && source === 'player') {
+      player.x = Math.min(cols - 1, player.x + 1)
+      checkLevelAdvance()
+    }
     if (cell.powerup) {
       triggerPowerup(cell.powerup, x, y)
       cell.powerup = null
     }
+    return true
   }
-  return true
+  return false
 }
 
 /* MOVEMENT */
@@ -579,12 +720,51 @@ function move(dx, dy) {
     if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
     let cell = map[ny][nx]
     if (cell.hp > 0) {
-      dig(nx, ny, 'player')
-      return
+      const destroyed = dig(nx, ny, 'player')
+      if (!destroyed) return
     }
     player.x = nx
     player.y = ny
-    if (player.x >= cols - 1) nextLevel()
+    checkLevelAdvance()
+  }
+}
+
+function updateCarBomb() {
+  if (!carBomb.active) return
+  carBomb.timer--
+  carBomb.moveTimer++
+
+  const targetX = Math.max(0, Math.min(cols - 1, player.x + 1))
+  const targetY = player.y
+
+  if (carBomb.moveTimer % 3 === 0) {
+    carBomb.x += Math.sign(targetX - carBomb.x)
+    carBomb.y += Math.sign(targetY - carBomb.y)
+  }
+
+  if (carBomb.moveTimer % 2 === 0) {
+    const digTargets = [
+      { x: carBomb.x + 1, y: carBomb.y },
+      { x: carBomb.x + 1, y: carBomb.y - 1 },
+      { x: carBomb.x + 1, y: carBomb.y + 1 },
+      { x: carBomb.x, y: carBomb.y }
+    ]
+    digTargets.forEach(target => {
+      if (carBomb.mined < 184 && map[target.y] && map[target.y][target.x] && map[target.y][target.x].hp > 0) {
+        destroyBlock(target.x, target.y, 1)
+        spawnDebris(target.x, target.y, '#9ff8ff', 4)
+        carBomb.mined++
+      }
+    })
+  }
+
+  if (carBomb.timer <= 0) {
+    carBomb.active = false
+    addExplosionAnimation(carBomb.x, carBomb.y, 7, '#7ef2ff')
+    destroyRandomInRadius(carBomb.x, carBomb.y, 7, 184)
+    spawnDebris(carBomb.x, carBomb.y, '#d9ffff', 34)
+    addFloatingText('Car Bomb detonation!', carBomb.x, carBomb.y, '#9cfbff')
+    eventFeedText = '🚗💣 Car Bomb detonated: 184-block blast!'
   }
 }
 
@@ -635,6 +815,10 @@ function nextLevel() {
     points = 10000
   }
   generateLevel()
+}
+
+function checkLevelAdvance() {
+  if (player.x >= cols - 1) nextLevel()
 }
 
 /* SHOP */
@@ -864,6 +1048,17 @@ function detonateAttachedBomb() {
     spawnDebris(player.x, player.y, '#e2d1ff', 30)
   }
 
+  if (attachedBombId === 'carBomb') {
+    carBomb.active = true
+    carBomb.timer = 360
+    carBomb.moveTimer = 0
+    carBomb.mined = 0
+    carBomb.x = Math.max(0, Math.min(cols - 1, player.x + 1))
+    carBomb.y = player.y
+    addFloatingText('Car Bomb deployed!', carBomb.x, carBomb.y, '#94f6ff')
+    eventFeedText = '🚗 Car Bomb deployed for 6 seconds.'
+  }
+
   attachedBombId = null
 }
 
@@ -979,11 +1174,15 @@ function draw() {
   drillAngle += 0.22
   updateParticles()
   updateSupportVehicle()
+  updateCarBomb()
+  updateFloatingTexts()
   drawParticles()
   drawExplosions()
+  drawPowerupWaves()
   updateTornadoAnimations()
   drawTornadoAnimations()
   drawVehicle()
+  drawFloatingTexts()
 
   if (laserUpgrade) {
     laserTimer++
@@ -1012,6 +1211,18 @@ function updateUI() {
   document.getElementById('bombStatus').innerText = activeBomb ? `${activeBomb.name} Attached (P)` : 'Empty'
   const activeTornado = tornadoUpgrades.find(item => item.id === attachedTornadoId)
   document.getElementById('tornadoStatus').innerText = activeTornado ? `${activeTornado.name} Attached (T)` : 'Empty'
+  document.getElementById('eventFeed').innerText = eventFeedText
+}
+
+function renderPowerupLegend() {
+  const legend = document.getElementById('powerupLegend')
+  legend.innerHTML = '<h4>Powerup Legend (on blocks)</h4>'
+  Object.entries(powerups).forEach(([key, info]) => {
+    const row = document.createElement('div')
+    row.className = 'legend-row'
+    row.innerHTML = `<span style="color:${info.color};font-weight:bold;">${info.symbol}</span><span>${key.replace(/([A-Z])/g, ' $1').replace(/^./, m => m.toUpperCase())}</span>`
+    legend.appendChild(row)
+  })
 }
 
 /* INPUT */
@@ -1037,6 +1248,7 @@ function gameLoop() {
 
 generateLevel()
 openDrillShop()
+renderPowerupLegend()
 gameLoop()
 </script>
 </body>
