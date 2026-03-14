@@ -67,6 +67,7 @@
     <div>Drills Attached: <span id="drillCount">1</span></div>
     <div>Support Vehicle: <span id="supportStatus">Offline</span></div>
     <div>Super Orb: <span id="orbStatus">Not Installed</span></div>
+    <div>Bomb Slot: <span id="bombStatus">Empty</span></div>
   </div>
   <div id="shop">
     <h3>Shop</h3>
@@ -74,7 +75,8 @@
     <button onclick="openBodyShop()">Vehicle Bodies</button>
     <button onclick="openVehicleUpgradeShop()">Vehicle Upgrades</button>
     <button onclick="openEngineShop()">Engine Shop</button>
-    <div class="hint">Press R to trigger Super Orb once installed.</div>
+    <button onclick="openBombShop()">Bomb Shop</button>
+    <div class="hint">Press R to trigger Super Orb once installed. Press P to detonate attached bomb.</div>
     <div id="shopOptions"></div>
   </div>
 </div>
@@ -92,6 +94,7 @@ let vehicleScale = 1, laserUpgrade = false, laserTimer = 0, drillCount = 1, came
 let explosionAnimations = []
 let temporaryBoostTimer = 0
 let orbCooldown = 0
+let attachedBombId = null
 
 const supportVehicle = {
   unlocked: false,
@@ -122,6 +125,14 @@ const powerups = {
   quakePulse: { color: '#a17cff', glow: '#d6c8ff', symbol: '◉' },
   warpCharge: { color: '#72ff8a', glow: '#bbffca', symbol: '➤' }
 }
+
+const bombUpgrades = [
+  { id: 'ultraBomb', name: 'Ultra Bomb', cost: 2800, color: '#ff4d4d', desc: 'Attach and detonate with P to destroy up to 240 blocks.', kind: 'attach' },
+  { id: 'tinyBomb', name: 'Tiny Bomb', cost: 180, color: '#ffd166', desc: 'Immediately detonates and destroys 2 tiles all around your vehicle.', kind: 'instant' },
+  { id: 'frostBomb', name: 'Frost Bomb', cost: 700, color: '#6bdcff', desc: 'Attach and detonate with P to shatter up to 40 nearby blocks.', kind: 'attach' },
+  { id: 'chainBomb', name: 'Chain Bomb', cost: 1250, color: '#ff9f43', desc: 'Attach and detonate with P to trigger chained bursts up to 90 blocks.', kind: 'attach' },
+  { id: 'vortexBomb', name: 'Vortex Bomb', cost: 1700, color: '#b784ff', desc: 'Attach and detonate with P for a focused vortex blast up to 130 blocks.', kind: 'attach' }
+]
 
 /* DRILLS */
 const drills = [
@@ -165,6 +176,7 @@ let ownedEngines = new Set(['stock'])
 let ownedVehicleUpgrades = new Set()
 let currentDrill = drills[0], currentBody = bodies[0], currentEngine = engines[0]
 let hasSuperOrb = false
+const purchasedBombCounts = new Map()
 
 function randomTileAround(x, y, radius) {
   return {
@@ -353,6 +365,21 @@ function drawVehicleAt(px, py, scale = 1, isSupport = false) {
     ctx.arc(5, -15, 5, 0, Math.PI * 2)
     ctx.fill()
     ctx.shadowBlur = 0
+  }
+
+  if (!isSupport && attachedBombId) {
+    const bomb = bombUpgrades.find(item => item.id === attachedBombId)
+    if (bomb) {
+      ctx.fillStyle = bomb.color
+      ctx.shadowBlur = 12
+      ctx.shadowColor = bomb.color
+      ctx.beginPath()
+      ctx.arc(-6, -16, 5.5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.shadowBlur = 0
+      ctx.fillStyle = '#121212'
+      ctx.fillRect(-6, -24, 2, 5)
+    }
   }
   ctx.restore()
 }
@@ -603,6 +630,7 @@ function createButton(item, isOwned, isEquipped, type) {
     if (type === 'drill') handleDrill(item)
     else if (type === 'body') handleBody(item)
     else if (type === 'engine') handleEngine(item)
+    else if (type === 'bomb') handleBombPurchase(item)
     else handleVehicleUpgrade(item)
   }
   return btn
@@ -635,6 +663,20 @@ function openEngineShop() {
     let owned = ownedEngines.has(e.id)
     let equipped = currentEngine.id === e.id
     div.appendChild(createButton(e, owned, equipped, 'engine'))
+  })
+}
+
+function openBombShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Bomb Shop</h4>'
+  bombUpgrades.forEach(bomb => {
+    const purchased = purchasedBombCounts.get(bomb.id) || 0
+    const ownedLabel = bomb.kind === 'attach' && attachedBombId === bomb.id
+    const buttonData = {
+      ...bomb,
+      name: ownedLabel ? `${bomb.name} (Attached)` : `${bomb.name} (Bought: ${purchased})`
+    }
+    div.appendChild(createButton(buttonData, false, false, 'bomb'))
   })
 }
 
@@ -672,6 +714,30 @@ function handleEngine(e) {
   }
   if (ownedEngines.has(e.id)) currentEngine = e
   openEngineShop()
+}
+
+function handleBombPurchase(bomb) {
+  if (points < bomb.cost) {
+    openBombShop()
+    return
+  }
+
+  points -= bomb.cost
+  purchasedBombCounts.set(bomb.id, (purchasedBombCounts.get(bomb.id) || 0) + 1)
+
+  if (bomb.id === 'tinyBomb') {
+    addExplosionAnimation(player.x, player.y, 2, '#ffe08a')
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dy = -2; dy <= 2; dy++) {
+        destroyBlock(player.x + dx, player.y + dy, 1)
+      }
+    }
+    openBombShop()
+    return
+  }
+
+  attachedBombId = bomb.id
+  openBombShop()
 }
 
 function handleVehicleUpgrade(s) {
@@ -713,6 +779,42 @@ function fireLaser() {
     let x = player.x + i
     if (x < cols) destroyBlock(x, y)
   }
+}
+
+function detonateAttachedBomb() {
+  if (!attachedBombId) return
+
+  if (attachedBombId === 'ultraBomb') {
+    addExplosionAnimation(player.x, player.y, 9, '#ff6b6b')
+    destroyRandomInRadius(player.x, player.y, 9, 240)
+    spawnDebris(player.x, player.y, '#ffb3b3', 32)
+  }
+
+  if (attachedBombId === 'frostBomb') {
+    addExplosionAnimation(player.x, player.y, 4, '#7be9ff')
+    destroyRandomInRadius(player.x, player.y, 4, 40)
+    temporaryBoostTimer = Math.max(temporaryBoostTimer, 420)
+    spawnDebris(player.x, player.y, '#d4f8ff', 22)
+  }
+
+  if (attachedBombId === 'chainBomb') {
+    for (let i = 0; i < 3; i++) {
+      const cx = Math.max(0, Math.min(cols - 1, player.x + Math.floor(Math.random() * 5) - 2))
+      const cy = Math.max(0, Math.min(rows - 1, player.y + Math.floor(Math.random() * 5) - 2))
+      addExplosionAnimation(cx, cy, 4, '#ffaf5e')
+      destroyRandomInRadius(cx, cy, 4, 30)
+    }
+    spawnDebris(player.x, player.y, '#ffd7b0', 24)
+  }
+
+  if (attachedBombId === 'vortexBomb') {
+    addExplosionAnimation(player.x, player.y, 6, '#c8a2ff')
+    destroyRandomInRadius(player.x, player.y, 6, 130)
+    cameraShake = 7
+    spawnDebris(player.x, player.y, '#e2d1ff', 30)
+  }
+
+  attachedBombId = null
 }
 
 function detonateSuperOrb() {
@@ -761,6 +863,8 @@ function updateUI() {
   document.getElementById('drillCount').innerText = drillCount
   document.getElementById('supportStatus').innerText = supportVehicle.active ? `Active (${Math.ceil(supportVehicle.timer / 60)}s)` : (supportVehicle.unlocked ? 'Ready (buy again to redeploy)' : 'Offline')
   document.getElementById('orbStatus').innerText = !hasSuperOrb ? 'Not Installed' : (orbCooldown <= 0 ? 'Ready (R)' : `Recharging ${Math.ceil(orbCooldown / 60)}s`)
+  const activeBomb = bombUpgrades.find(item => item.id === attachedBombId)
+  document.getElementById('bombStatus').innerText = activeBomb ? `${activeBomb.name} Attached (P)` : 'Empty'
 }
 
 /* INPUT */
@@ -770,6 +874,7 @@ window.addEventListener('keydown', e => {
   if (e.key === 'ArrowUp') move(0, -1)
   if (e.key === 'ArrowDown') move(0, 1)
   if (e.key.toLowerCase() === 'r') detonateSuperOrb()
+  if (e.key.toLowerCase() === 'p') detonateAttachedBomb()
 })
 
 const levelEl = document.getElementById('level')
