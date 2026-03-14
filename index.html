@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Drill Digger</title>
+<style>
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: radial-gradient(circle at top, #1c1c1c, #090909 65%);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #game {
+    border: 2px solid #444;
+    background: #000;
+    image-rendering: pixelated;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
+  }
+  #layout {
+    margin-top: 6px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  #statusPanel {
+    background: #1b1b1b;
+    padding: 10px;
+    border: 1px solid #555;
+    width: 230px;
+    border-radius: 8px;
+    min-height: 538px;
+  }
+  #shop {
+    background: #1b1b1b;
+    padding: 10px;
+    border: 1px solid #555;
+    width: 420px;
+    border-radius: 8px;
+  }
+  button {
+    margin: 4px;
+    padding: 8px 10px;
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .option {
+    display: block;
+    width: 100%;
+    text-align: left;
+  }
+  .hint {
+    color: #cfcfcf;
+    font-size: 12px;
+    margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+<h2>Drill Digger</h2>
+<div id="layout">
+  <div id="statusPanel">
+    <h3>Status</h3>
+    <div>Level: <span id="level">1</span></div>
+    <div>Points: <span id="points">10000</span></div>
+    <div>Drill: <span id="drillName">Starter Drill</span></div>
+    <div>Body: <span id="bodyName">Basic Rig</span></div>
+    <div>Engine: <span id="engineName">Stock Engine</span></div>
+    <div>Drills Attached: <span id="drillCount">1</span></div>
+    <div>Support Vehicle: <span id="supportStatus">Offline</span></div>
+    <div>Super Orb: <span id="orbStatus">Not Installed</span></div>
+    <div>Bomb Slot: <span id="bombStatus">Empty</span></div>
+    <div>Tornado Slot: <span id="tornadoStatus">Empty</span></div>
+  </div>
+
+  <canvas id="game" width="860" height="560"></canvas>
+
+  <div id="shop">
+    <h3>Shop</h3>
+    <button onclick="openDrillShop()">Drills</button>
+    <button onclick="openBodyShop()">Vehicle Bodies</button>
+    <button onclick="openVehicleUpgradeShop()">Vehicle Upgrades</button>
+    <button onclick="openEngineShop()">Engine Shop</button>
+    <button onclick="openBombShop()">Bomb Shop</button>
+    <button onclick="openTornadoShop()">Tornado Shop</button>
+    <div class="hint">Press R for Super Orb, P for attached bomb, T for attached tornado.</div>
+    <div id="shopOptions"></div>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('game')
+const ctx = canvas.getContext('2d')
+const tileSize = 40
+const rows = 14
+const cols = 21
+
+let level = 1, points = 10000
+let player = { x: 0, y: 7 }
+let map = [], particles = [], drillAngle = 0
+let vehicleScale = 1, laserUpgrade = false, laserTimer = 0, drillCount = 1, cameraShake = 0
+let explosionAnimations = []
+let temporaryBoostTimer = 0
+let orbCooldown = 0
+let attachedBombId = null
+let attachedTornadoId = null
+let tornadoAnimations = []
+
+const supportVehicle = {
+  unlocked: false,
+  active: false,
+  x: 0,
+  y: 7,
+  timer: 0,
+  moveTimer: 0
+}
+
+/* MATERIALS */
+const materials = [
+  { type: 'dirt', color: '#8b5a2b' },
+  { type: 'rock', color: '#777777' },
+  { type: 'coal', color: '#222222' },
+  { type: 'iron', color: '#b87333' },
+  { type: 'diamond', color: '#66e0ff' },
+  { type: 'emerald', color: '#00c853' },
+  { type: 'ruby', color: '#c4002f' },
+  { type: 'sapphire', color: '#2962ff' }
+]
+
+/* POWERUPS */
+const powerups = {
+  megaBomb: { color: '#ff4b4b', glow: '#ff9898', symbol: '💣' },
+  creditCache: { color: '#ffd447', glow: '#ffef9f', symbol: '¢' },
+  drillOverdrive: { color: '#7ad7ff', glow: '#bcefff', symbol: '⚡' },
+  quakePulse: { color: '#a17cff', glow: '#d6c8ff', symbol: '◉' },
+  warpCharge: { color: '#72ff8a', glow: '#bbffca', symbol: '➤' }
+}
+
+const bombUpgrades = [
+  { id: 'ultraBomb', name: 'Ultra Bomb', cost: 2800, color: '#ff4d4d', desc: 'Attach and detonate with P to destroy up to 240 blocks.', kind: 'attach' },
+  { id: 'tinyBomb', name: 'Tiny Bomb', cost: 180, color: '#ffd166', desc: 'Immediately detonates and destroys 2 tiles all around your vehicle.', kind: 'instant' },
+  { id: 'frostBomb', name: 'Frost Bomb', cost: 700, color: '#6bdcff', desc: 'Attach and detonate with P to shatter up to 40 nearby blocks.', kind: 'attach' },
+  { id: 'chainBomb', name: 'Chain Bomb', cost: 1250, color: '#ff9f43', desc: 'Attach and detonate with P to trigger chained bursts up to 90 blocks.', kind: 'attach' },
+  { id: 'vortexBomb', name: 'Vortex Bomb', cost: 1700, color: '#b784ff', desc: 'Attach and detonate with P for a focused vortex blast up to 130 blocks.', kind: 'attach' }
+]
+
+const tornadoUpgrades = [
+  { id: 'dustTwister', name: 'Dust Twister', cost: 900, color: '#d3b08a', desc: 'Balanced tornado that tears through up to 55 blocks.' },
+  { id: 'fireStorm', name: 'Fire Storm', cost: 1500, color: '#ff7443', desc: 'Hot tornado with ember trail, destroys up to 95 blocks.' },
+  { id: 'frostSpiral', name: 'Frost Spiral', cost: 1300, color: '#87e3ff', desc: 'Cold tornado that shatters up to 75 blocks.' },
+  { id: 'plasmaCyclone', name: 'Plasma Cyclone', cost: 2100, color: '#c17dff', desc: 'Electric tornado with heavy impact up to 120 blocks.' },
+  { id: 'voidMaelstrom', name: 'Void Maelstrom', cost: 2600, color: '#7f82ff', desc: 'Dark maelstrom that devours up to 165 blocks.' }
+]
+
+/* DRILLS */
+const drills = [
+  { id: 'starter', name: 'Starter Drill', power: 1, cost: 0, color: '#ccc', ability: null, desc: 'Basic drilling tool.' },
+  { id: 'flame', name: 'Flame Drill', power: 2, cost: 100, color: '#ff6a00', ability: 'fireball', desc: 'Shoots flame destroying blocks ahead.' },
+  { id: 'explosive', name: 'Explosive Drill', power: 2, cost: 200, color: '#ff3030', ability: 'explosion', desc: 'Creates explosion on break.' },
+  { id: 'blackhole', name: 'Black Hole Drill', power: 3, cost: 600, color: '#7a3cff', ability: 'blackhole', desc: 'Pulls in nearby blocks.' },
+  { id: 'universe', name: 'Universe Drill', power: 5, cost: 1000, color: '#ffffff', ability: 'universe', desc: 'Destroys up to 86 blocks.' }
+]
+
+/* BODIES */
+const bodies = [
+  { id: 'basic', name: 'Basic Rig', cost: 0, color: '#f2c230', ability: null, desc: 'Standard vehicle.' },
+  { id: 'tank', name: 'Titan Tank', cost: 250, color: '#777', ability: 'shield', desc: 'Immune to knockback layers.' },
+  { id: 'magnet', name: 'Magnet Rover', cost: 450, color: '#b34dff', ability: 'magnet', desc: 'Collects bonus points.' },
+  { id: 'quake', name: 'Quake Crawler', cost: 650, color: '#ff4444', ability: 'quake', desc: 'Creates shockwaves.' }
+]
+
+/* ENGINES */
+const engines = [
+  { id: 'stock', name: 'Stock Engine', cost: 0, color: '#aaa', ability: null, desc: 'Standard engine.' },
+  { id: 'turbo', name: 'Turbo Engine', cost: 400, color: '#ff8800', ability: 'dash', desc: 'Move 2 blocks at a time.' },
+  { id: 'spinner', name: 'Spinner Engine', cost: 800, color: '#00eaff', ability: 'spin', desc: 'Vehicle spins while drilling.' },
+  { id: 'mega', name: 'Mega Torque Engine', cost: 1200, color: '#66ff66', ability: 'bigDrill', desc: 'Makes drill visually larger.' },
+  { id: 'quakecore', name: 'Quake Engine', cost: 1600, color: '#ff4444', ability: 'shock', desc: 'Breaks nearby blocks.' },
+  { id: 'warp', name: 'Warp Drive Engine', cost: 2400, color: '#cc66ff', ability: 'warp', desc: 'Occasionally jumps forward.' }
+]
+
+/* VEHICLE UPGRADES */
+const vehicleUpgrades = [
+  { id: 'addDrill', name: 'Add Drill (+1)', cost: 300, color: '#ffaa00', desc: 'Adds another drill to vehicle. Max 50.' },
+  { id: 'megaRig', name: '2x Size Rig', cost: 2000, color: '#44ff44', desc: 'Vehicle becomes twice as large.' },
+  { id: 'laserCore', name: 'Laser Cannon', cost: 3000, color: '#ff0055', desc: 'Fires laser every 4 seconds.' },
+  { id: 'supportRig', name: 'Support Vehicle Bay', cost: 1800, color: '#5bd8ff', desc: 'Deploys helper vehicle for 30s; ends with 18-block blast.' },
+  { id: 'superOrb', name: 'Super Orb', cost: 3200, color: '#c580ff', desc: 'Attach orb to vehicle. Press R to destroy 200 blocks.' }
+]
+
+let ownedDrills = new Set(['starter'])
+let ownedBodies = new Set(['basic'])
+let ownedEngines = new Set(['stock'])
+let ownedVehicleUpgrades = new Set()
+let currentDrill = drills[0], currentBody = bodies[0], currentEngine = engines[0]
+let hasSuperOrb = false
+const purchasedBombCounts = new Map()
+const purchasedTornadoCounts = new Map()
+
+function randomTileAround(x, y, radius) {
+  return {
+    x: Math.max(0, Math.min(cols - 1, x + Math.floor(Math.random() * (radius * 2 + 1)) - radius)),
+    y: Math.max(0, Math.min(rows - 1, y + Math.floor(Math.random() * (radius * 2 + 1)) - radius))
+  }
+}
+
+/* LEVEL GENERATION */
+function generateLevel() {
+  map = []
+  for (let r = 0; r < rows; r++) {
+    let row = []
+    for (let c = 0; c < cols; c++) {
+      let mat = materials[0]
+      row.push({ hp: 1, maxHp: 1, color: mat.color, type: mat.type, powerup: null })
+    }
+    map.push(row)
+  }
+
+  for (let i = 0; i < 60; i++) {
+    let veinLength = 3 + Math.floor(Math.random() * 8)
+    let x = Math.floor(Math.random() * cols)
+    let y = Math.floor(Math.random() * rows)
+    let mat = materials[Math.floor(Math.random() * materials.length)]
+    for (let v = 0; v < veinLength; v++) {
+      if (map[y] && map[y][x]) {
+        let hardness = 1 + Math.floor(level / 2)
+        map[y][x] = { hp: hardness, maxHp: hardness, color: mat.color, type: mat.type, powerup: null }
+      }
+      x += Math.floor(Math.random() * 3) - 1
+      y += Math.floor(Math.random() * 3) - 1
+    }
+  }
+
+  placePowerups()
+  player.x = 0
+  player.y = 7
+  if (supportVehicle.active) {
+    supportVehicle.x = player.x + 1
+    supportVehicle.y = player.y
+  }
+}
+
+function placePowerups() {
+  const keys = Object.keys(powerups)
+  const count = 24
+  for (let i = 0; i < count; i++) {
+    let x = 1 + Math.floor(Math.random() * (cols - 2))
+    let y = Math.floor(Math.random() * rows)
+    map[y][x].powerup = keys[Math.floor(Math.random() * keys.length)]
+  }
+}
+
+/* DRAW TILE */
+function drawTile(x, y, cell) {
+  let px = x * tileSize, py = y * tileSize
+  let damage = cell.hp / cell.maxHp
+  let grad = ctx.createLinearGradient(px, py, px + tileSize, py + tileSize)
+  grad.addColorStop(0, cell.color)
+  grad.addColorStop(1, '#000')
+  ctx.fillStyle = grad
+  ctx.fillRect(px, py, tileSize, tileSize)
+
+  if (cell.powerup) {
+    const p = powerups[cell.powerup]
+    const pulse = 0.45 + Math.sin((Date.now() / 170) + x + y) * 0.25
+    ctx.save()
+    ctx.globalAlpha = 0.25 + pulse
+    ctx.fillStyle = p.glow
+    ctx.beginPath()
+    ctx.arc(px + tileSize / 2, py + tileSize / 2, 8 + pulse * 5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalAlpha = 0.9
+    ctx.fillStyle = p.color
+    ctx.font = '10px Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText(p.symbol, px + tileSize / 2, py + tileSize / 2 + 3)
+    ctx.restore()
+  }
+
+  if (damage < 0.7) {
+    ctx.strokeStyle = 'black'
+    ctx.beginPath()
+    ctx.moveTo(px + 5, py + 5)
+    ctx.lineTo(px + 30, py + 30)
+    ctx.stroke()
+  }
+  if (damage < 0.4) {
+    ctx.beginPath()
+    ctx.moveTo(px + 30, py + 5)
+    ctx.lineTo(px + 5, py + 30)
+    ctx.stroke()
+  }
+}
+
+function drawVehicleBase(bodyColor, engineColor) {
+  const metal = ctx.createLinearGradient(-20, -12, 20, 12)
+  metal.addColorStop(0, '#f8f8f8')
+  metal.addColorStop(0.35, bodyColor)
+  metal.addColorStop(1, '#1f1f1f')
+
+  // Chassis
+  ctx.fillStyle = metal
+  ctx.beginPath()
+  ctx.moveTo(-20, -10)
+  ctx.lineTo(15, -13)
+  ctx.lineTo(22, -5)
+  ctx.lineTo(22, 7)
+  ctx.lineTo(10, 13)
+  ctx.lineTo(-18, 12)
+  ctx.closePath()
+  ctx.fill()
+
+  // Cockpit
+  ctx.fillStyle = 'rgba(180,220,255,0.75)'
+  ctx.beginPath()
+  ctx.moveTo(-6, -8)
+  ctx.lineTo(8, -8)
+  ctx.lineTo(12, -2)
+  ctx.lineTo(-8, -2)
+  ctx.closePath()
+  ctx.fill()
+
+  // Wheels / treads
+  for (let i = -1; i <= 1; i++) {
+    const wy = i * 8
+    ctx.fillStyle = '#1b1b1b'
+    ctx.beginPath()
+    ctx.arc(-10, wy, 4.5, 0, Math.PI * 2)
+    ctx.arc(8, wy, 4.5, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // Engine block + exhaust
+  const engineGrad = ctx.createLinearGradient(-16, -15, -4, 15)
+  engineGrad.addColorStop(0, '#f5f5f5')
+  engineGrad.addColorStop(0.5, engineColor)
+  engineGrad.addColorStop(1, '#222')
+  ctx.fillStyle = engineGrad
+  ctx.fillRect(-17, -14, 11, 28)
+  ctx.fillStyle = '#272727'
+  ctx.fillRect(-20, -8, 4, 16)
+}
+
+/* VEHICLE */
+function drawVehicleAt(px, py, scale = 1, isSupport = false) {
+  ctx.save()
+  let shakeX = (Math.random() - 0.5) * cameraShake
+  let shakeY = (Math.random() - 0.5) * cameraShake
+  ctx.translate(px + tileSize / 2 + shakeX, py + tileSize / 2 + shakeY)
+  ctx.scale(scale, scale)
+
+  if (currentEngine.ability === 'spin') {
+    ctx.rotate(Math.sin(drillAngle * 0.2) * 0.03)
+  }
+
+  drawVehicleBase(isSupport ? '#95c7ff' : currentBody.color, isSupport ? '#74b4f5' : currentEngine.color)
+
+  // Drill rig with spinning animation restored.
+  const drillVisualScale = currentEngine.ability === 'bigDrill' ? 1.35 : 1
+  for (let i = 0; i < (isSupport ? 1 : drillCount); i++) {
+    ctx.save()
+    ctx.translate(22, (i - (isSupport ? 0 : drillCount / 2)) * 6)
+    ctx.rotate(drillAngle + i * 0.5)
+    ctx.scale(drillVisualScale, drillVisualScale)
+    ctx.fillStyle = isSupport ? '#8be9fd' : currentDrill.color
+    ctx.beginPath()
+    ctx.moveTo(0, -7)
+    ctx.lineTo(16, 0)
+    ctx.lineTo(0, 7)
+    ctx.closePath()
+    ctx.fill()
+    ctx.strokeStyle = '#111'
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  // Orb attachment
+  if (!isSupport && hasSuperOrb) {
+    const ready = orbCooldown <= 0
+    ctx.fillStyle = ready ? '#f5b0ff' : '#735a85'
+    ctx.shadowBlur = ready ? 15 : 5
+    ctx.shadowColor = '#de86ff'
+    ctx.beginPath()
+    ctx.arc(5, -15, 5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.shadowBlur = 0
+  }
+
+  if (!isSupport && attachedBombId) {
+    const bomb = bombUpgrades.find(item => item.id === attachedBombId)
+    if (bomb) {
+      ctx.fillStyle = bomb.color
+      ctx.shadowBlur = 12
+      ctx.shadowColor = bomb.color
+      ctx.beginPath()
+      ctx.arc(-6, -16, 5.5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.shadowBlur = 0
+      ctx.fillStyle = '#121212'
+      ctx.fillRect(-6, -24, 2, 5)
+    }
+  }
+  ctx.restore()
+}
+
+function drawVehicle() {
+  drawVehicleAt(player.x * tileSize, player.y * tileSize, vehicleScale, false)
+  if (supportVehicle.active) {
+    drawVehicleAt(supportVehicle.x * tileSize, supportVehicle.y * tileSize, Math.max(0.85, vehicleScale * 0.8), true)
+  }
+}
+
+/* PARTICLES */
+function spawnDebris(tx, ty, color, amount = 6) {
+  for (let i = 0; i < amount; i++) {
+    particles.push({
+      x: tx * tileSize + 20,
+      y: ty * tileSize + 20,
+      vx: (Math.random() - 0.5) * 4,
+      vy: (Math.random() - 0.5) * 4,
+      life: 20 + Math.floor(Math.random() * 8),
+      color
+    })
+  }
+}
+
+function updateParticles() {
+  particles.forEach(p => {
+    p.x += p.vx
+    p.y += p.vy
+    p.life--
+  })
+  particles = particles.filter(p => p.life > 0)
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.fillStyle = p.color
+    ctx.fillRect(p.x, p.y, 3, 3)
+  })
+}
+
+function addExplosionAnimation(x, y, radius, color) {
+  explosionAnimations.push({ x, y, radius, maxRadius: radius * tileSize * 0.62, color, life: 24, age: 0 })
+}
+
+function drawExplosions() {
+  explosionAnimations.forEach(e => {
+    const t = e.age / e.life
+    const current = e.maxRadius * (0.15 + t)
+    ctx.save()
+    ctx.globalAlpha = 0.55 * (1 - t)
+    ctx.strokeStyle = e.color
+    ctx.lineWidth = 6 * (1 - t * 0.6)
+    ctx.beginPath()
+    ctx.arc(e.x * tileSize + tileSize / 2, e.y * tileSize + tileSize / 2, current, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+    e.age++
+  })
+  explosionAnimations = explosionAnimations.filter(e => e.age < e.life)
+}
+
+/* ABILITIES */
+function destroyBlock(x, y, reward = 2) {
+  if (map[y] && map[y][x] && map[y][x].hp > 0) {
+    const cell = map[y][x]
+    cell.hp = 0
+    points += reward
+    if (cell.powerup) {
+      triggerPowerup(cell.powerup, x, y)
+      cell.powerup = null
+    }
+  }
+}
+
+function destroyRandomInRadius(cx, cy, radius, maxBlocks) {
+  const candidates = []
+  for (let dx = -radius; dx <= radius; dx++) {
+    for (let dy = -radius; dy <= radius; dy++) {
+      const x = cx + dx
+      const y = cy + dy
+      if (map[y] && map[y][x] && map[y][x].hp > 0) {
+        candidates.push({ x, y })
+      }
+    }
+  }
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[candidates[i], candidates[j]] = [candidates[j], candidates[i]]
+  }
+  candidates.slice(0, maxBlocks).forEach(c => destroyBlock(c.x, c.y, 1))
+}
+
+function explosion(x, y) {
+  addExplosionAnimation(x, y, 2, '#ff5b5b')
+  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) destroyBlock(x + dx, y + dy)
+}
+
+function blackhole(x, y) {
+  addExplosionAnimation(x, y, 3, '#ab78ff')
+  for (let dx = -3; dx <= 3; dx++) for (let dy = -3; dy <= 3; dy++) destroyBlock(x + dx, y + dy)
+}
+
+function universe(x, y) {
+  let destroyed = 0
+  for (let dx = -6; dx <= 6; dx++) {
+    for (let dy = -6; dy <= 6; dy++) {
+      if (destroyed >= 86) return
+      if (map[y + dy] && map[y + dy][x + dx] && map[y + dy][x + dx].hp > 0) {
+        destroyBlock(x + dx, y + dy)
+        destroyed++
+      }
+    }
+  }
+}
+
+function triggerPowerup(type, x, y) {
+  if (type === 'megaBomb') {
+    addExplosionAnimation(x, y, 7, '#ff5252')
+    destroyRandomInRadius(x, y, 7, 146)
+    spawnDebris(x, y, '#ffd2d2', 25)
+    return
+  }
+  if (type === 'creditCache') {
+    points += 850
+    spawnDebris(x, y, '#ffe066', 18)
+    return
+  }
+  if (type === 'drillOverdrive') {
+    temporaryBoostTimer = 600
+    spawnDebris(x, y, '#9ff4ff', 18)
+    return
+  }
+  if (type === 'quakePulse') {
+    addExplosionAnimation(x, y, 4, '#ad90ff')
+    destroyRandomInRadius(x, y, 4, 60)
+    return
+  }
+  if (type === 'warpCharge') {
+    player.x = Math.min(cols - 1, player.x + 3)
+    spawnDebris(player.x, player.y, '#83ff9f', 16)
+  }
+}
+
+/* DIGGING */
+function dig(x, y, source = 'player') {
+  let cell = map[y] && map[y][x]
+  if (!cell) return false
+  const boost = temporaryBoostTimer > 0 ? 2 : 1
+  const basePower = source === 'support' ? Math.max(1, Math.floor(currentDrill.power * 0.75)) : currentDrill.power * drillCount
+  cell.hp -= basePower * boost
+  spawnDebris(x, y, source === 'support' ? '#8be9fd' : currentDrill.color)
+  cameraShake = 4
+  if (cell.hp <= 0) {
+    points += 2
+    if (currentDrill.ability === 'explosion') explosion(x, y)
+    if (currentDrill.ability === 'blackhole') blackhole(x, y)
+    if (currentDrill.ability === 'universe') universe(x, y)
+    if (currentEngine.ability === 'shock') explosion(x, y)
+    if (currentEngine.ability === 'warp' && source === 'player') player.x = Math.min(cols - 1, player.x + 1)
+    if (cell.powerup) {
+      triggerPowerup(cell.powerup, x, y)
+      cell.powerup = null
+    }
+  }
+  return true
+}
+
+/* MOVEMENT */
+function move(dx, dy) {
+  let steps = currentEngine.ability === 'dash' ? 2 : 1
+  for (let i = 0; i < steps; i++) {
+    let nx = player.x + dx, ny = player.y + dy
+    if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
+    let cell = map[ny][nx]
+    if (cell.hp > 0) {
+      dig(nx, ny, 'player')
+      return
+    }
+    player.x = nx
+    player.y = ny
+    if (player.x >= cols - 1) nextLevel()
+  }
+}
+
+function updateSupportVehicle() {
+  if (!supportVehicle.active) return
+  supportVehicle.timer--
+  supportVehicle.moveTimer++
+
+  const dx = player.x - supportVehicle.x
+  const dy = player.y - supportVehicle.y
+  const distance = Math.max(Math.abs(dx), Math.abs(dy))
+
+  if (distance > 5) {
+    supportVehicle.x = player.x - Math.sign(dx) * 4
+    supportVehicle.y = player.y - Math.sign(dy) * 4
+  }
+
+  if (supportVehicle.moveTimer >= 10) {
+    supportVehicle.moveTimer = 0
+    const options = [
+      { x: supportVehicle.x + Math.sign(dx), y: supportVehicle.y },
+      { x: supportVehicle.x, y: supportVehicle.y + Math.sign(dy) },
+      randomTileAround(player.x, player.y, 2)
+    ]
+    for (const opt of options) {
+      if (!map[opt.y] || !map[opt.y][opt.x]) continue
+      if (Math.max(Math.abs(opt.x - player.x), Math.abs(opt.y - player.y)) > 5) continue
+      if (map[opt.y][opt.x].hp > 0) dig(opt.x, opt.y, 'support')
+      supportVehicle.x = opt.x
+      supportVehicle.y = opt.y
+      break
+    }
+  }
+
+  if (supportVehicle.timer <= 0) {
+    supportVehicle.active = false
+    addExplosionAnimation(supportVehicle.x, supportVehicle.y, 4, '#7dd3ff')
+    destroyRandomInRadius(supportVehicle.x, supportVehicle.y, 4, 18)
+  }
+}
+
+/* LEVEL */
+function nextLevel() {
+  level++
+  if (level > 36) {
+    alert('You beat the game!')
+    level = 1
+    points = 10000
+  }
+  generateLevel()
+}
+
+/* SHOP */
+function createButton(item, isOwned, isEquipped, type) {
+  let btn = document.createElement('button')
+  btn.className = 'option'
+  btn.style.background = item.color
+  btn.style.color = 'black'
+  btn.title = item.desc
+  let label = item.name
+  if (isEquipped) label += ' (Equipped)'
+  else if (isOwned) label += ' (Owned)'
+  else label += ' ($' + item.cost + ')'
+  btn.innerHTML = label
+  btn.onclick = () => {
+    if (type === 'drill') handleDrill(item)
+    else if (type === 'body') handleBody(item)
+    else if (type === 'engine') handleEngine(item)
+    else if (type === 'bomb') handleBombPurchase(item)
+    else if (type === 'tornado') handleTornadoPurchase(item)
+    else handleVehicleUpgrade(item)
+  }
+  return btn
+}
+
+function openDrillShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Drills</h4>'
+  drills.forEach(d => {
+    let owned = ownedDrills.has(d.id)
+    let equipped = currentDrill.id === d.id
+    div.appendChild(createButton(d, owned, equipped, 'drill'))
+  })
+}
+
+function openBodyShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Vehicle Bodies</h4>'
+  bodies.forEach(b => {
+    let owned = ownedBodies.has(b.id)
+    let equipped = currentBody.id === b.id
+    div.appendChild(createButton(b, owned, equipped, 'body'))
+  })
+}
+
+function openEngineShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Engines</h4>'
+  engines.forEach(e => {
+    let owned = ownedEngines.has(e.id)
+    let equipped = currentEngine.id === e.id
+    div.appendChild(createButton(e, owned, equipped, 'engine'))
+  })
+}
+
+function openBombShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Bomb Shop</h4>'
+  bombUpgrades.forEach(bomb => {
+    const purchased = purchasedBombCounts.get(bomb.id) || 0
+    const ownedLabel = bomb.kind === 'attach' && attachedBombId === bomb.id
+    const buttonData = {
+      ...bomb,
+      name: ownedLabel ? `${bomb.name} (Attached)` : `${bomb.name} (Bought: ${purchased})`
+    }
+    div.appendChild(createButton(buttonData, false, false, 'bomb'))
+  })
+}
+
+function openTornadoShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Tornado Shop</h4>'
+  tornadoUpgrades.forEach(tornado => {
+    const purchased = purchasedTornadoCounts.get(tornado.id) || 0
+    const attached = attachedTornadoId === tornado.id
+    const buttonData = {
+      ...tornado,
+      name: attached ? `${tornado.name} (Attached)` : `${tornado.name} (Bought: ${purchased})`
+    }
+    div.appendChild(createButton(buttonData, false, false, 'tornado'))
+  })
+}
+
+function openVehicleUpgradeShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Vehicle Upgrades</h4>'
+  vehicleUpgrades.forEach(s => {
+    let owned = ownedVehicleUpgrades.has(s.id)
+    div.appendChild(createButton(s, owned, false, 'upgrade'))
+  })
+}
+
+function handleDrill(d) {
+  if (!ownedDrills.has(d.id) && points >= d.cost) {
+    points -= d.cost
+    ownedDrills.add(d.id)
+  }
+  if (ownedDrills.has(d.id)) currentDrill = d
+  openDrillShop()
+}
+
+function handleBody(b) {
+  if (!ownedBodies.has(b.id) && points >= b.cost) {
+    points -= b.cost
+    ownedBodies.add(b.id)
+  }
+  if (ownedBodies.has(b.id)) currentBody = b
+  openBodyShop()
+}
+
+function handleEngine(e) {
+  if (!ownedEngines.has(e.id) && points >= e.cost) {
+    points -= e.cost
+    ownedEngines.add(e.id)
+  }
+  if (ownedEngines.has(e.id)) currentEngine = e
+  openEngineShop()
+}
+
+function handleBombPurchase(bomb) {
+  if (points < bomb.cost) {
+    openBombShop()
+    return
+  }
+
+  points -= bomb.cost
+  purchasedBombCounts.set(bomb.id, (purchasedBombCounts.get(bomb.id) || 0) + 1)
+
+  if (bomb.id === 'tinyBomb') {
+    addExplosionAnimation(player.x, player.y, 2, '#ffe08a')
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dy = -2; dy <= 2; dy++) {
+        destroyBlock(player.x + dx, player.y + dy, 1)
+      }
+    }
+    openBombShop()
+    return
+  }
+
+  attachedBombId = bomb.id
+  openBombShop()
+}
+
+function handleTornadoPurchase(tornado) {
+  if (points < tornado.cost) {
+    openTornadoShop()
+    return
+  }
+
+  points -= tornado.cost
+  purchasedTornadoCounts.set(tornado.id, (purchasedTornadoCounts.get(tornado.id) || 0) + 1)
+  attachedTornadoId = tornado.id
+  openTornadoShop()
+}
+
+function handleVehicleUpgrade(s) {
+  const repeatableUpgradeIds = new Set(['addDrill', 'supportRig'])
+  const requiresPurchase = repeatableUpgradeIds.has(s.id) || !ownedVehicleUpgrades.has(s.id)
+
+  if (requiresPurchase && points < s.cost) {
+    openVehicleUpgradeShop()
+    return
+  }
+
+  if (requiresPurchase && points >= s.cost) {
+    points -= s.cost
+    if (!repeatableUpgradeIds.has(s.id)) {
+      ownedVehicleUpgrades.add(s.id)
+    }
+  }
+
+  if (s.id === 'addDrill' && drillCount < 50) drillCount++
+  if (s.id === 'megaRig') vehicleScale = 2
+  if (s.id === 'laserCore') laserUpgrade = true
+  if (s.id === 'supportRig') {
+    supportVehicle.unlocked = true
+    supportVehicle.active = true
+    supportVehicle.timer = 1800
+    supportVehicle.x = Math.min(cols - 1, player.x + 1)
+    supportVehicle.y = player.y
+  }
+  if (s.id === 'superOrb') {
+    hasSuperOrb = true
+  }
+  openVehicleUpgradeShop()
+}
+
+/* LASER */
+function fireLaser() {
+  let y = player.y
+  for (let i = 1; i <= 5; i++) {
+    let x = player.x + i
+    if (x < cols) destroyBlock(x, y)
+  }
+}
+
+function detonateAttachedBomb() {
+  if (!attachedBombId) return
+
+  if (attachedBombId === 'ultraBomb') {
+    addExplosionAnimation(player.x, player.y, 9, '#ff6b6b')
+    destroyRandomInRadius(player.x, player.y, 9, 240)
+    spawnDebris(player.x, player.y, '#ffb3b3', 32)
+  }
+
+  if (attachedBombId === 'frostBomb') {
+    addExplosionAnimation(player.x, player.y, 4, '#7be9ff')
+    destroyRandomInRadius(player.x, player.y, 4, 40)
+    temporaryBoostTimer = Math.max(temporaryBoostTimer, 420)
+    spawnDebris(player.x, player.y, '#d4f8ff', 22)
+  }
+
+  if (attachedBombId === 'chainBomb') {
+    for (let i = 0; i < 3; i++) {
+      const cx = Math.max(0, Math.min(cols - 1, player.x + Math.floor(Math.random() * 5) - 2))
+      const cy = Math.max(0, Math.min(rows - 1, player.y + Math.floor(Math.random() * 5) - 2))
+      addExplosionAnimation(cx, cy, 4, '#ffaf5e')
+      destroyRandomInRadius(cx, cy, 4, 30)
+    }
+    spawnDebris(player.x, player.y, '#ffd7b0', 24)
+  }
+
+  if (attachedBombId === 'vortexBomb') {
+    addExplosionAnimation(player.x, player.y, 6, '#c8a2ff')
+    destroyRandomInRadius(player.x, player.y, 6, 130)
+    cameraShake = 7
+    spawnDebris(player.x, player.y, '#e2d1ff', 30)
+  }
+
+  attachedBombId = null
+}
+
+function spawnTornado(type, sourceX, sourceY) {
+  const profile = {
+    dustTwister: { speed: 0.11, radius: 2.2, maxBlocks: 55, color: '#d3b08a', wobble: 0.55 },
+    fireStorm: { speed: 0.15, radius: 2.8, maxBlocks: 95, color: '#ff7443', wobble: 0.75 },
+    frostSpiral: { speed: 0.12, radius: 2.5, maxBlocks: 75, color: '#87e3ff', wobble: 0.62 },
+    plasmaCyclone: { speed: 0.16, radius: 3.1, maxBlocks: 120, color: '#c17dff', wobble: 0.86 },
+    voidMaelstrom: { speed: 0.2, radius: 3.6, maxBlocks: 165, color: '#7f82ff', wobble: 1.05 }
+  }
+  const p = profile[type]
+  if (!p) return
+  tornadoAnimations.push({
+    type,
+    x: sourceX,
+    y: sourceY,
+    vx: p.speed,
+    radius: p.radius,
+    maxBlocks: p.maxBlocks,
+    color: p.color,
+    wobble: p.wobble,
+    life: 360,
+    age: 0,
+    destroyed: 0
+  })
+}
+
+function detonateAttachedTornado() {
+  if (!attachedTornadoId) return
+  spawnTornado(attachedTornadoId, player.x + 0.5, player.y + 0.5)
+  attachedTornadoId = null
+}
+
+function updateTornadoAnimations() {
+  tornadoAnimations.forEach(t => {
+    t.age++
+    t.x += t.vx
+    t.y += Math.sin(t.age * 0.08) * (0.03 + t.wobble * 0.015)
+
+    if (t.age % 4 === 0 && t.destroyed < t.maxBlocks) {
+      const cx = Math.floor(t.x)
+      const cy = Math.floor(t.y)
+      const radius = Math.max(2, Math.round(t.radius))
+      const before = t.destroyed
+      for (let i = 0; i < 3 && t.destroyed < t.maxBlocks; i++) {
+        const tx = cx + Math.floor((Math.random() - 0.5) * radius * 2)
+        const ty = cy + Math.floor((Math.random() - 0.5) * radius * 2)
+        if (map[ty] && map[ty][tx] && map[ty][tx].hp > 0) {
+          destroyBlock(tx, ty, 1)
+          spawnDebris(tx, ty, t.color, 3)
+          t.destroyed++
+        }
+      }
+      if (t.destroyed > before) {
+        addExplosionAnimation(Math.floor(t.x), Math.floor(t.y), Math.min(4, Math.max(2, Math.floor(t.radius))), t.color)
+      }
+    }
+  })
+  tornadoAnimations = tornadoAnimations.filter(t => t.life > t.age && t.x < cols + 2)
+}
+
+function drawTornadoAnimations() {
+  tornadoAnimations.forEach(t => {
+    const px = t.x * tileSize
+    const py = t.y * tileSize
+    for (let i = 0; i < 9; i++) {
+      const layerT = i / 8
+      const layerY = py - 52 + i * 12
+      const layerW = (16 + i * 5) * (1 + Math.sin((t.age + i * 7) * 0.08) * 0.12)
+      const layerH = 8 + i * 1.8
+      ctx.save()
+      ctx.globalAlpha = 0.14 + layerT * 0.07
+      ctx.fillStyle = t.color
+      ctx.beginPath()
+      ctx.ellipse(px + Math.sin((t.age + i * 10) * 0.12) * (5 + i), layerY, layerW, layerH, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+
+    ctx.save()
+    ctx.globalAlpha = 0.28
+    ctx.strokeStyle = '#f1f1f1'
+    ctx.lineWidth = 1.4
+    ctx.beginPath()
+    for (let s = 0; s < 6; s++) {
+      const sy = py - 42 + s * 12
+      const sx = px + Math.sin((t.age * 0.18) + s) * (4 + s * 2)
+      if (s === 0) ctx.moveTo(sx, sy)
+      else ctx.lineTo(sx, sy)
+    }
+    ctx.stroke()
+    ctx.restore()
+  })
+}
+
+function detonateSuperOrb() {
+  if (!hasSuperOrb || orbCooldown > 0) return
+  orbCooldown = 720
+  addExplosionAnimation(player.x, player.y, 8, '#df8bff')
+  destroyRandomInRadius(player.x, player.y, 8, 200)
+  spawnDebris(player.x, player.y, '#f0b1ff', 30)
+}
+
+/* DRAW */
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    let cell = map[r][c]
+    if (cell.hp > 0) drawTile(c, r, cell)
+  }
+
+  drillAngle += 0.22
+  updateParticles()
+  updateSupportVehicle()
+  drawParticles()
+  drawExplosions()
+  updateTornadoAnimations()
+  drawTornadoAnimations()
+  drawVehicle()
+
+  if (laserUpgrade) {
+    laserTimer++
+    if (laserTimer > 240) {
+      fireLaser()
+      laserTimer = 0
+    }
+  }
+
+  if (temporaryBoostTimer > 0) temporaryBoostTimer--
+  if (orbCooldown > 0) orbCooldown--
+  cameraShake *= 0.9
+}
+
+/* UI */
+function updateUI() {
+  levelEl.innerText = level
+  pointsEl.innerText = points
+  document.getElementById('drillName').innerText = currentDrill.name + (temporaryBoostTimer > 0 ? ' [Overdrive]' : '')
+  document.getElementById('bodyName').innerText = currentBody.name
+  document.getElementById('engineName').innerText = currentEngine.name
+  document.getElementById('drillCount').innerText = drillCount
+  document.getElementById('supportStatus').innerText = supportVehicle.active ? `Active (${Math.ceil(supportVehicle.timer / 60)}s)` : (supportVehicle.unlocked ? 'Ready (buy again to redeploy)' : 'Offline')
+  document.getElementById('orbStatus').innerText = !hasSuperOrb ? 'Not Installed' : (orbCooldown <= 0 ? 'Ready (R)' : `Recharging ${Math.ceil(orbCooldown / 60)}s`)
+  const activeBomb = bombUpgrades.find(item => item.id === attachedBombId)
+  document.getElementById('bombStatus').innerText = activeBomb ? `${activeBomb.name} Attached (P)` : 'Empty'
+  const activeTornado = tornadoUpgrades.find(item => item.id === attachedTornadoId)
+  document.getElementById('tornadoStatus').innerText = activeTornado ? `${activeTornado.name} Attached (T)` : 'Empty'
+}
+
+/* INPUT */
+window.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') move(1, 0)
+  if (e.key === 'ArrowLeft') move(-1, 0)
+  if (e.key === 'ArrowUp') move(0, -1)
+  if (e.key === 'ArrowDown') move(0, 1)
+  if (e.key.toLowerCase() === 'r') detonateSuperOrb()
+  if (e.key.toLowerCase() === 'p') detonateAttachedBomb()
+  if (e.key.toLowerCase() === 't') detonateAttachedTornado()
+})
+
+const levelEl = document.getElementById('level')
+const pointsEl = document.getElementById('points')
+
+/* LOOP */
+function gameLoop() {
+  draw()
+  updateUI()
+  requestAnimationFrame(gameLoop)
+}
+
+generateLevel()
+openDrillShop()
+gameLoop()
+</script>
+</body>
+</html>
