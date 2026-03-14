@@ -104,7 +104,7 @@
     <div id="powerupLegend"></div>
   </div>
 
-  <canvas id="game" width="860" height="560"></canvas>
+  <canvas id="game" width="860" height="720"></canvas>
 
   <div id="shop">
     <h3>Shop</h3>
@@ -122,7 +122,7 @@
 const canvas = document.getElementById('game')
 const ctx = canvas.getContext('2d')
 const tileSize = 40
-const rows = 14
+const rows = 18
 const cols = 21
 
 let level = 1, points = 10000
@@ -157,6 +157,12 @@ const carBomb = {
   mined: 0
 }
 
+const carBombPlus = {
+  active: false,
+  timer: 0,
+  cars: []
+}
+
 /* MATERIALS */
 const materials = [
   { type: 'dirt', color: '#8b5a2b' },
@@ -184,7 +190,8 @@ const bombUpgrades = [
   { id: 'frostBomb', name: 'Frost Bomb', cost: 700, color: '#6bdcff', desc: 'Attach and detonate with P to shatter up to 40 nearby blocks.', kind: 'attach' },
   { id: 'chainBomb', name: 'Chain Bomb', cost: 1250, color: '#ff9f43', desc: 'Attach and detonate with P to trigger chained bursts up to 90 blocks.', kind: 'attach' },
   { id: 'vortexBomb', name: 'Vortex Bomb', cost: 1700, color: '#b784ff', desc: 'Attach and detonate with P for a focused vortex blast up to 130 blocks.', kind: 'attach' },
-  { id: 'carBomb', name: 'Car Bomb', cost: 2200, color: '#7ef2ff', desc: 'Attach and detonate with P to deploy a mining sidecar for 6s; it finishes with a 184-block blast.', kind: 'attach' }
+  { id: 'carBomb', name: 'Car Bomb', cost: 2200, color: '#7ef2ff', desc: 'Attach and detonate with P to deploy a mining sidecar for 6s; it finishes with a 184-block blast.', kind: 'attach' },
+  { id: 'carBombPlus', name: 'Car Bomb Plus', cost: 4200, color: '#6cffd8', desc: 'Attach and detonate with P to deploy 18 mining cars for 8s, then trigger massive synchronized explosions and board shake.', kind: 'attach' }
 ]
 
 const tornadoUpgrades = [
@@ -481,6 +488,8 @@ function drawVehicle() {
     ctx.shadowBlur = 0
     ctx.restore()
   }
+
+  drawCarBombPlus()
 }
 
 /* PARTICLES */
@@ -766,6 +775,98 @@ function updateCarBomb() {
     addFloatingText('Car Bomb detonation!', carBomb.x, carBomb.y, '#9cfbff')
     eventFeedText = '🚗💣 Car Bomb detonated: 184-block blast!'
   }
+}
+
+
+function createCarBombPlusCars() {
+  const cars = []
+  const centerX = player.x
+  const centerY = player.y
+  for (let i = 0; i < 18; i++) {
+    const angle = (Math.PI * 2 * i) / 18
+    const radius = 2 + (i % 3)
+    cars.push({
+      x: Math.max(0, Math.min(cols - 1, Math.round(centerX + Math.cos(angle) * radius))),
+      y: Math.max(0, Math.min(rows - 1, Math.round(centerY + Math.sin(angle) * radius))),
+      angle,
+      phase: Math.random() * Math.PI * 2,
+      mined: 0
+    })
+  }
+  return cars
+}
+
+function updateCarBombPlus() {
+  if (!carBombPlus.active) return
+  carBombPlus.timer--
+
+  carBombPlus.cars.forEach((car, index) => {
+    car.phase += 0.15
+    const orbitRadius = 2.4 + ((index % 4) * 0.25)
+    const targetX = Math.max(0, Math.min(cols - 1, Math.round(player.x + Math.cos(car.angle + car.phase * 0.12) * orbitRadius)))
+    const targetY = Math.max(0, Math.min(rows - 1, Math.round(player.y + Math.sin(car.angle + car.phase * 0.12) * orbitRadius)))
+    car.x += Math.sign(targetX - car.x)
+    car.y += Math.sign(targetY - car.y)
+
+    const digTargets = [
+      { x: car.x + 1, y: car.y },
+      { x: car.x - 1, y: car.y },
+      { x: car.x, y: car.y + 1 },
+      { x: car.x, y: car.y - 1 },
+      { x: car.x, y: car.y }
+    ]
+
+    digTargets.forEach(target => {
+      if (map[target.y] && map[target.y][target.x] && map[target.y][target.x].hp > 0) {
+        destroyBlock(target.x, target.y, 1)
+        spawnDebris(target.x, target.y, '#7affea', 2)
+        car.mined++
+      }
+    })
+  })
+
+  if (carBombPlus.timer <= 0) {
+    carBombPlus.active = false
+    carBombPlus.cars.forEach((car, index) => {
+      const hue = 170 + (index % 6) * 12
+      const color = `hsl(${hue}, 95%, 70%)`
+      addExplosionAnimation(car.x, car.y, 9, color)
+      addExplosionAnimation(car.x, car.y, 6, '#ffffff')
+      destroyRandomInRadius(car.x, car.y, 9, 34)
+      spawnDebris(car.x, car.y, color, 10)
+    })
+    cameraShake = Math.max(cameraShake, 24)
+    addFloatingText('CAR BOMB PLUS: MEGA DETONATION!', player.x, player.y, '#90ffe9')
+    eventFeedText = '🚘💥 Car Bomb Plus chain explosion rocked the board!'
+    carBombPlus.cars = []
+  }
+}
+
+function drawCarBombPlus() {
+  if (!carBombPlus.active) return
+  carBombPlus.cars.forEach((car, index) => {
+    const px = car.x * tileSize
+    const py = car.y * tileSize
+    const pulse = 0.7 + Math.sin((drillAngle * 0.9) + index) * 0.2
+    ctx.save()
+    ctx.translate(px + tileSize / 2, py + tileSize / 2)
+    ctx.rotate(car.phase)
+    ctx.scale(0.55 + pulse * 0.1, 0.55 + pulse * 0.1)
+    drawVehicleBase('#70ffe0', '#aafff2')
+    ctx.fillStyle = '#6cffd8'
+    ctx.shadowBlur = 12
+    ctx.shadowColor = '#6cffd8'
+    ctx.beginPath()
+    ctx.arc(-5, -15, 5.2, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.shadowBlur = 0
+    ctx.strokeStyle = 'rgba(200,255,244,0.9)'
+    ctx.lineWidth = 1.4
+    ctx.beginPath()
+    ctx.arc(0, 0, 14 + Math.sin(car.phase * 2) * 2, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  })
 }
 
 function updateSupportVehicle() {
@@ -1059,6 +1160,14 @@ function detonateAttachedBomb() {
     eventFeedText = '🚗 Car Bomb deployed for 6 seconds.'
   }
 
+  if (attachedBombId === 'carBombPlus') {
+    carBombPlus.active = true
+    carBombPlus.timer = 480
+    carBombPlus.cars = createCarBombPlusCars()
+    addFloatingText('Car Bomb Plus deployed!', player.x, player.y, '#88ffe8')
+    eventFeedText = '🚘 Car Bomb Plus deployed: 18 mining cars active for 8 seconds.'
+  }
+
   attachedBombId = null
 }
 
@@ -1175,6 +1284,7 @@ function draw() {
   updateParticles()
   updateSupportVehicle()
   updateCarBomb()
+  updateCarBombPlus()
   updateFloatingTexts()
   drawParticles()
   drawExplosions()
