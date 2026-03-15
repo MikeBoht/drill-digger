@@ -288,11 +288,6 @@ const purchasedBombCounts = new Map()
 const purchasedTornadoCounts = new Map()
 const purchasedCannonCounts = new Map()
 const purchasedMoneyCounts = new Map()
-const ownedMoneyPassives = new Set()
-let cashRadarLevel = 0
-let goldenMagnetLevel = 0
-let bankInterestLevel = 0
-let bankInterestTimer = 0
 
 const cannons = [
   { id: 'blackHoleCannon', name: 'Black Hole Cannon', cost: 2600, color: '#5f3bff', shellColor: '#0f0627', accent: '#bfa2ff', desc: 'Shoots black holes that pull 20 blocks in, then collapse to destroy 34 more blocks.', type: 'blackHole', pullBlocks: 20, blastBlocks: 34, speed: 0.44, radius: 0.45 },
@@ -305,9 +300,9 @@ const cannons = [
 const moneyShopItems = [
   { id: 'moneyAsteroid', name: 'Money Asteroid', cost: 8000, color: '#ff9a4d', desc: 'Summon a blazing asteroid that destroys 260 blocks, then drops a giant $800 pickup.', kind: 'active' },
   { id: 'moneyCar', name: 'Money Car', cost: 3500, color: '#88ffcf', desc: 'Deploy a money car that destroys 12 blocks while driving, then explodes for 40 more and drops cash piles.', kind: 'active' },
-  { id: 'cashRadar', name: 'Cash Radar', cost: 2800, color: '#ffe082', desc: 'Permanent passive: +35% money from every money pickup.', kind: 'passive' },
-  { id: 'goldenMagnet', name: 'Golden Magnet', cost: 2200, color: '#f8d86d', desc: 'Permanent passive: pickup radius grows dramatically.', kind: 'passive' },
-  { id: 'bankInterest', name: 'Bank Interest Chip', cost: 3000, color: '#b8a8ff', desc: 'Permanent passive: gain +20 money every 4 seconds.', kind: 'passive' }
+  { id: 'coinMortar', name: 'Coin Mortar', cost: 2800, color: '#ffe082', desc: 'Active: launch 5 coin mortars ahead. Each blast destroys 26 blocks and leaves cash on nearby tiles.', kind: 'active' },
+  { id: 'vaultCharge', name: 'Vault Charge', cost: 2200, color: '#f8d86d', desc: 'Active: detonate a golden charge around your rig, destroying 110 blocks and dropping a rich money ring.', kind: 'active' },
+  { id: 'paydayBeacon', name: 'Payday Beacon', cost: 3000, color: '#b8a8ff', desc: 'Active: call 8 payday strikes across the map. Each strike destroys terrain and drops tile cash piles.', kind: 'active' }
 ]
 
 let attachedCannonId = null
@@ -843,59 +838,31 @@ function drawFloatingTexts() {
 }
 
 function spawnMoneyPickup(x, y, amount, color = '#ffe066', spread = 0.4) {
+  const tileX = Math.max(0, Math.min(cols - 1, Math.round(x + (Math.random() - 0.5) * spread)))
+  const tileY = Math.max(0, Math.min(rows - 1, Math.round(y + (Math.random() - 0.5) * spread)))
   moneyPickups.push({
-    x: x + (Math.random() - 0.5) * spread,
-    y: y + (Math.random() - 0.5) * spread,
+    x: tileX,
+    y: tileY,
     amount,
     color,
-    life: 1400,
-    vy: -0.01 - Math.random() * 0.02,
-    vx: (Math.random() - 0.5) * 0.03
+    life: 1800
   })
 }
 
 function spawnMoneyBurst(x, y, count, amountEach, color = '#ffe27a') {
   for (let i = 0; i < count; i++) {
-    spawnMoneyPickup(x, y, amountEach, color, 1.1)
+    spawnMoneyPickup(x, y, amountEach, color, 3.2)
   }
-}
-
-function getMoneyMultiplier() {
-  return 1 + cashRadarLevel * 0.35
-}
-
-function getMoneyPickupRadius() {
-  return 0.55 + goldenMagnetLevel * 0.65
 }
 
 function updateMoneySystems() {
-  if (bankInterestLevel > 0) {
-    bankInterestTimer++
-    const threshold = Math.max(60, 240 - bankInterestLevel * 15)
-    if (bankInterestTimer >= threshold) {
-      bankInterestTimer = 0
-      const payout = 20 * bankInterestLevel
-      money += payout
-      addFloatingText(`+$${payout}`, player.x, Math.max(0, player.y - 1), '#ffd35c')
-    }
-  }
-
-  const radius = getMoneyPickupRadius()
   moneyPickups.forEach(pickup => {
     pickup.life--
-    pickup.x += pickup.vx
-    pickup.y += pickup.vy
-    pickup.vy = Math.min(0.06, pickup.vy + 0.001)
-
-    const dx = (player.x + 0.5) - pickup.x
-    const dy = (player.y + 0.5) - pickup.y
-    const dist = Math.hypot(dx, dy)
-
-    if (dist < radius) {
-      const gain = Math.floor(pickup.amount * getMoneyMultiplier())
+    if (player.x === pickup.x && player.y === pickup.y) {
+      const gain = pickup.amount
       money += gain
       points += Math.floor(gain * 0.15)
-      addFloatingText(`+$${gain}`, Math.floor(pickup.x), Math.floor(pickup.y), '#ffe991')
+      addFloatingText(`+$${gain}`, pickup.x, pickup.y, '#ffe991')
       pickup.life = 0
     }
   })
@@ -905,8 +872,8 @@ function updateMoneySystems() {
 
 function drawMoneyPickups() {
   moneyPickups.forEach(pickup => {
-    const px = pickup.x * tileSize
-    const py = pickup.y * tileSize
+    const px = (pickup.x + 0.5) * tileSize
+    const py = (pickup.y + 0.5) * tileSize
     const pulse = 0.6 + Math.sin((Date.now() / 120) + pickup.x * 3) * 0.35
     ctx.save()
     ctx.globalAlpha = 0.65 + pulse * 0.35
@@ -1277,7 +1244,7 @@ function updateCarBomb() {
 
 function launchMoneyAsteroid() {
   if (moneyAsteroidStrike.active) return
-  const targetY = Math.max(1, Math.min(rows - 2, player.y + Math.floor(Math.random() * 5) - 2))
+  const targetY = Math.floor(rows / 2)
   moneyAsteroidStrike.active = true
   moneyAsteroidStrike.x = Math.max(4, Math.min(cols - 3, player.x + 8))
   moneyAsteroidStrike.y = targetY
@@ -1318,7 +1285,7 @@ function updateMoneyAsteroid() {
     destroyRandomInRadius(cx, cy, 11, 260)
     spawnDebris(cx, cy, '#ffb67d', 90)
     spawnDebris(cx, cy, '#ffd796', 85)
-    spawnMoneyPickup(cx + 0.5, cy + 0.5, 800, '#ffd85e', 0.15)
+    spawnMoneyPickup(cx, cy, 800, '#ffd85e', 0.2)
     addFloatingText('Money Asteroid Impact! +$800 dropped', cx, cy, '#ffd65f')
     cameraShake = Math.max(cameraShake, 20)
     eventFeedText = '☄️💰 Money Asteroid impacted: 260 blocks destroyed, $800 dropped!'
@@ -1353,11 +1320,57 @@ function updateMoneyCar() {
     addExplosionAnimation(ex, ey, 7, '#ff9b5e')
     destroyRandomInRadius(ex, ey, 7, 40)
     spawnDebris(ex, ey, '#ffe0ac', 44)
-    spawnMoneyBurst(ex + 0.4, ey + 0.5, 10, 55, '#ffe999')
+    spawnMoneyBurst(ex, ey, 10, 55, '#ffe999')
     addFloatingText('Money Car payout!', ex, ey, '#ffe88c')
     eventFeedText = '🚘💥 Money Car exploded: 40 blocks destroyed + cash piles dropped!'
     moneyCarRun.active = false
   }
+}
+
+
+function triggerCoinMortar() {
+  const centerY = Math.floor(rows / 2)
+  const startX = Math.max(4, player.x + 3)
+  for (let i = 0; i < 5; i++) {
+    const tx = Math.max(2, Math.min(cols - 3, startX + i * 2))
+    const ty = Math.max(1, Math.min(rows - 2, centerY + Math.floor(Math.random() * 5) - 2))
+    addExplosionAnimation(tx, ty, 5, '#ffd770')
+    destroyRandomInRadius(tx, ty, 5, 26)
+    spawnMoneyBurst(tx, ty, 5, 30, '#ffe69a')
+  }
+  addFloatingText('Coin Mortar barrage!', player.x, player.y, '#ffe28a')
+  cameraShake = Math.max(cameraShake, 12)
+  eventFeedText = '🪙 Mortars fired: 5 blasts and money piles scattered!'
+}
+
+function triggerVaultCharge() {
+  const cx = player.x
+  const cy = player.y
+  addExplosionAnimation(cx, cy, 8, '#ffe58a')
+  addExplosionAnimation(cx, cy, 6, '#fff3b0')
+  destroyRandomInRadius(cx, cy, 8, 110)
+  for (let i = 0; i < 16; i++) {
+    const angle = (Math.PI * 2 * i) / 16
+    const tx = Math.round(cx + Math.cos(angle) * 3)
+    const ty = Math.round(cy + Math.sin(angle) * 3)
+    spawnMoneyPickup(tx, ty, 42, '#ffe889', 0.1)
+  }
+  addFloatingText('Vault Charge detonated!', cx, cy, '#ffec96')
+  cameraShake = Math.max(cameraShake, 14)
+  eventFeedText = '🏦💥 Vault Charge burst: 110 blocks destroyed and a money ring dropped!'
+}
+
+function triggerPaydayBeacon() {
+  for (let i = 0; i < 8; i++) {
+    const tx = 2 + Math.floor(Math.random() * (cols - 4))
+    const ty = 1 + Math.floor(Math.random() * (rows - 2))
+    addExplosionAnimation(tx, ty, 4, '#c9bbff')
+    destroyRandomInRadius(tx, ty, 4, 18)
+    spawnMoneyBurst(tx, ty, 4, 28, '#e6dcff')
+  }
+  addFloatingText('Payday Beacon online!', player.x, Math.max(0, player.y - 1), '#d8c9ff')
+  cameraShake = Math.max(cameraShake, 10)
+  eventFeedText = '📡💸 Payday Beacon called in 8 strikes with cash drops!'
 }
 
 function drawMoneySpecials() {
@@ -1655,12 +1668,11 @@ function openMoneyShop() {
   div.innerHTML = '<h4>Money Shop</h4>'
   moneyShopItems.forEach(item => {
     const purchased = purchasedMoneyCounts.get(item.id) || 0
-    const ownedPassive = item.kind === 'passive' && ownedMoneyPassives.has(item.id)
     const buttonData = {
       ...item,
-      name: ownedPassive ? `${item.name} (Owned)` : `${item.name} (Bought: ${purchased})`
+      name: `${item.name} (Bought: ${purchased})`
     }
-    div.appendChild(createButton(buttonData, ownedPassive, false, 'money'))
+    div.appendChild(createButton(buttonData, false, false, 'money'))
   })
 }
 
@@ -1753,11 +1765,6 @@ function handleCannonPurchase(cannon) {
 }
 
 function handleMoneyShopPurchase(item) {
-  const alreadyOwnedPassive = item.kind === 'passive' && ownedMoneyPassives.has(item.id)
-  if (alreadyOwnedPassive) {
-    openMoneyShop()
-    return
-  }
   if (money < item.cost) {
     openMoneyShop()
     return
@@ -1772,21 +1779,14 @@ function handleMoneyShopPurchase(item) {
   if (item.id === 'moneyCar') {
     launchMoneyCar()
   }
-  if (item.id === 'cashRadar') {
-    ownedMoneyPassives.add(item.id)
-    cashRadarLevel = 1
-    addFloatingText('Cash Radar online', player.x, player.y, '#ffe78a')
+  if (item.id === 'coinMortar') {
+    triggerCoinMortar()
   }
-  if (item.id === 'goldenMagnet') {
-    ownedMoneyPassives.add(item.id)
-    goldenMagnetLevel = 1
-    addFloatingText('Golden Magnet active', player.x, player.y, '#fff2a6')
+  if (item.id === 'vaultCharge') {
+    triggerVaultCharge()
   }
-  if (item.id === 'bankInterest') {
-    ownedMoneyPassives.add(item.id)
-    bankInterestLevel = 1
-    bankInterestTimer = 0
-    addFloatingText('Bank Interest installed', player.x, player.y, '#d7c9ff')
+  if (item.id === 'paydayBeacon') {
+    triggerPaydayBeacon()
   }
 
   openMoneyShop()
