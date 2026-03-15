@@ -92,6 +92,7 @@
     <h3>Status</h3>
     <div>Level: <span id="level">1</span></div>
     <div>Points: <span id="points">10000</span></div>
+    <div>Money: $<span id="money">12000</span></div>
     <div>Drill: <span id="drillName">Starter Drill</span></div>
     <div>Body: <span id="bodyName">Basic Rig</span></div>
     <div>Engine: <span id="engineName">Stock Engine</span></div>
@@ -116,6 +117,7 @@
     <button onclick="openBombShop()">Bomb Shop</button>
     <button onclick="openTornadoShop()">Tornado Shop</button>
     <button onclick="openCannonShop()">Cannon Shop</button>
+    <button onclick="openMoneyShop()">Money Shop</button>
     <div class="hint">Press R for Super Orb, P for attached bomb, T for attached tornado, C to fire cannon.</div>
     <div id="shopOptions"></div>
   </div>
@@ -127,7 +129,7 @@ const tileSize = 40
 const rows = 18
 const cols = 21
 
-let level = 1, points = 10000
+let level = 1, points = 10000, money = 12000
 let player = { x: 0, y: 7 }
 let map = [], particles = [], drillAngle = 0
 let vehicleScale = 1, laserUpgrade = false, laserTimer = 0, drillCount = 1, cameraShake = 0
@@ -145,6 +147,27 @@ let meltAnimations = []
 let cannonProjectiles = []
 let cannonEffects = []
 let starFragments = []
+let moneyPickups = []
+
+const moneyAsteroidStrike = {
+  active: false,
+  x: 0,
+  y: 0,
+  px: 0,
+  py: 0,
+  vx: 0,
+  vy: 0,
+  life: 0
+}
+
+const moneyCarRun = {
+  active: false,
+  x: 0,
+  y: 0,
+  px: 0,
+  mined: 0,
+  speed: 0.065
+}
 
 
 const infernoDrive = {
@@ -264,13 +287,27 @@ let hasSuperOrb = false
 const purchasedBombCounts = new Map()
 const purchasedTornadoCounts = new Map()
 const purchasedCannonCounts = new Map()
+const purchasedMoneyCounts = new Map()
+const ownedMoneyPassives = new Set()
+let cashRadarLevel = 0
+let goldenMagnetLevel = 0
+let bankInterestLevel = 0
+let bankInterestTimer = 0
 
 const cannons = [
-  { id: 'blackHoleCannon', name: 'Black Hole Cannon', cost: 2600, color: '#5f3bff', shellColor: '#0f0627', accent: '#bfa2ff', desc: 'Shoots black holes that pull 200 blocks in, then collapse to destroy 340 more blocks.', type: 'blackHole', pullBlocks: 200, blastBlocks: 340, speed: 0.44, radius: 0.45 },
-  { id: 'fireballCannon', name: 'Fireball Cannon', cost: 2100, color: '#ff8b2d', shellColor: '#ff4d00', accent: '#ffd18a', desc: 'Shoots blazing fireballs that burn 100 blocks, then explode to destroy 200 more blocks.', type: 'fireball', burnBlocks: 100, blastBlocks: 200, speed: 0.52, radius: 0.38 },
-  { id: 'universeCannon', name: 'Universe Cannon', cost: 4200, color: '#9cf4ff', shellColor: '#11294f', accent: '#ffffff', desc: 'Shoots a swirling universe that destroys 600 blocks, then stars and planets blast out destroying 400 more.', type: 'universe', swirlBlocks: 600, blastBlocks: 400, speed: 0.36, radius: 0.55 },
-  { id: 'stormCannon', name: 'Tempest Arc Cannon', cost: 2400, color: '#54d6ff', shellColor: '#3d7cff', accent: '#d8f5ff', desc: 'Launches storm cores that arc lightning through 160 blocks, then detonate and shatter 180 blocks.', type: 'storm', arcBlocks: 160, blastBlocks: 180, speed: 0.48, radius: 0.4 },
-  { id: 'prismCannon', name: 'Prism Nova Cannon', cost: 3000, color: '#ff7ff2', shellColor: '#f8ff73', accent: '#ffe6ff', desc: 'Fires rainbow prism shots that slice 220 blocks, then split into nova rays destroying 260 blocks.', type: 'prism', sliceBlocks: 220, blastBlocks: 260, speed: 0.5, radius: 0.42 }
+  { id: 'blackHoleCannon', name: 'Black Hole Cannon', cost: 2600, color: '#5f3bff', shellColor: '#0f0627', accent: '#bfa2ff', desc: 'Shoots black holes that pull 20 blocks in, then collapse to destroy 34 more blocks.', type: 'blackHole', pullBlocks: 20, blastBlocks: 34, speed: 0.44, radius: 0.45 },
+  { id: 'fireballCannon', name: 'Fireball Cannon', cost: 2100, color: '#ff8b2d', shellColor: '#ff4d00', accent: '#ffd18a', desc: 'Shoots blazing fireballs that burn 10 blocks, then explode to destroy 20 more blocks.', type: 'fireball', burnBlocks: 10, blastBlocks: 20, speed: 0.52, radius: 0.38 },
+  { id: 'universeCannon', name: 'Universe Cannon', cost: 4200, color: '#9cf4ff', shellColor: '#11294f', accent: '#ffffff', desc: 'Shoots a swirling universe that destroys 60 blocks, then stars and planets blast out destroying 40 more.', type: 'universe', swirlBlocks: 60, blastBlocks: 40, speed: 0.36, radius: 0.55 },
+  { id: 'stormCannon', name: 'Tempest Arc Cannon', cost: 2400, color: '#54d6ff', shellColor: '#3d7cff', accent: '#d8f5ff', desc: 'Launches storm cores that arc lightning through 16 blocks, then detonate and shatter 18 blocks.', type: 'storm', arcBlocks: 16, blastBlocks: 18, speed: 0.48, radius: 0.4 },
+  { id: 'prismCannon', name: 'Prism Nova Cannon', cost: 3000, color: '#ff7ff2', shellColor: '#f8ff73', accent: '#ffe6ff', desc: 'Fires rainbow prism shots that slice 22 blocks, then split into nova rays destroying 26 blocks.', type: 'prism', sliceBlocks: 22, blastBlocks: 26, speed: 0.5, radius: 0.42 }
+]
+
+const moneyShopItems = [
+  { id: 'moneyAsteroid', name: 'Money Asteroid', cost: 8000, color: '#ff9a4d', desc: 'Summon a blazing asteroid that destroys 260 blocks, then drops a giant $800 pickup.', kind: 'active' },
+  { id: 'moneyCar', name: 'Money Car', cost: 3500, color: '#88ffcf', desc: 'Deploy a money car that destroys 12 blocks while driving, then explodes for 40 more and drops cash piles.', kind: 'active' },
+  { id: 'cashRadar', name: 'Cash Radar', cost: 2800, color: '#ffe082', desc: 'Permanent passive: +35% money from every money pickup.', kind: 'passive' },
+  { id: 'goldenMagnet', name: 'Golden Magnet', cost: 2200, color: '#f8d86d', desc: 'Permanent passive: pickup radius grows dramatically.', kind: 'passive' },
+  { id: 'bankInterest', name: 'Bank Interest Chip', cost: 3000, color: '#b8a8ff', desc: 'Permanent passive: gain +20 money every 4 seconds.', kind: 'passive' }
 ]
 
 let attachedCannonId = null
@@ -805,6 +842,86 @@ function drawFloatingTexts() {
   })
 }
 
+function spawnMoneyPickup(x, y, amount, color = '#ffe066', spread = 0.4) {
+  moneyPickups.push({
+    x: x + (Math.random() - 0.5) * spread,
+    y: y + (Math.random() - 0.5) * spread,
+    amount,
+    color,
+    life: 1400,
+    vy: -0.01 - Math.random() * 0.02,
+    vx: (Math.random() - 0.5) * 0.03
+  })
+}
+
+function spawnMoneyBurst(x, y, count, amountEach, color = '#ffe27a') {
+  for (let i = 0; i < count; i++) {
+    spawnMoneyPickup(x, y, amountEach, color, 1.1)
+  }
+}
+
+function getMoneyMultiplier() {
+  return 1 + cashRadarLevel * 0.35
+}
+
+function getMoneyPickupRadius() {
+  return 0.55 + goldenMagnetLevel * 0.65
+}
+
+function updateMoneySystems() {
+  if (bankInterestLevel > 0) {
+    bankInterestTimer++
+    const threshold = Math.max(60, 240 - bankInterestLevel * 15)
+    if (bankInterestTimer >= threshold) {
+      bankInterestTimer = 0
+      const payout = 20 * bankInterestLevel
+      money += payout
+      addFloatingText(`+$${payout}`, player.x, Math.max(0, player.y - 1), '#ffd35c')
+    }
+  }
+
+  const radius = getMoneyPickupRadius()
+  moneyPickups.forEach(pickup => {
+    pickup.life--
+    pickup.x += pickup.vx
+    pickup.y += pickup.vy
+    pickup.vy = Math.min(0.06, pickup.vy + 0.001)
+
+    const dx = (player.x + 0.5) - pickup.x
+    const dy = (player.y + 0.5) - pickup.y
+    const dist = Math.hypot(dx, dy)
+
+    if (dist < radius) {
+      const gain = Math.floor(pickup.amount * getMoneyMultiplier())
+      money += gain
+      points += Math.floor(gain * 0.15)
+      addFloatingText(`+$${gain}`, Math.floor(pickup.x), Math.floor(pickup.y), '#ffe991')
+      pickup.life = 0
+    }
+  })
+
+  moneyPickups = moneyPickups.filter(p => p.life > 0)
+}
+
+function drawMoneyPickups() {
+  moneyPickups.forEach(pickup => {
+    const px = pickup.x * tileSize
+    const py = pickup.y * tileSize
+    const pulse = 0.6 + Math.sin((Date.now() / 120) + pickup.x * 3) * 0.35
+    ctx.save()
+    ctx.globalAlpha = 0.65 + pulse * 0.35
+    ctx.fillStyle = pickup.color
+    ctx.beginPath()
+    ctx.arc(px, py, 5 + pulse * 3, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#fff7cf'
+    ctx.font = 'bold 11px Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText('$', px, py + 3)
+    ctx.restore()
+  })
+}
+
 function addPowerupWave(x, y, color) {
   powerupWaves.push({ x, y, color, age: 0, life: 40 })
 }
@@ -1048,7 +1165,7 @@ function triggerPowerup(type, x, y) {
 
   if (type === 'megaBomb') {
     addExplosionAnimation(x, y, 7, '#ff5252')
-    destroyRandomInRadius(x, y, 7, 146)
+    destroyRandomInRadius(x, y, 7, 26)
     spawnDebris(x, y, '#ffd2d2', 25)
     return
   }
@@ -1064,7 +1181,7 @@ function triggerPowerup(type, x, y) {
   }
   if (type === 'quakePulse') {
     addExplosionAnimation(x, y, 4, '#ad90ff')
-    destroyRandomInRadius(x, y, 4, 60)
+    destroyRandomInRadius(x, y, 4, 14)
     return
   }
   if (type === 'warpCharge') {
@@ -1155,6 +1272,138 @@ function updateCarBomb() {
     spawnDebris(carBomb.x, carBomb.y, '#d9ffff', 34)
     addFloatingText('Car Bomb detonation!', carBomb.x, carBomb.y, '#9cfbff')
     eventFeedText = '🚗💣 Car Bomb detonated: 184-block blast!'
+  }
+}
+
+function launchMoneyAsteroid() {
+  if (moneyAsteroidStrike.active) return
+  const targetY = Math.max(1, Math.min(rows - 2, player.y + Math.floor(Math.random() * 5) - 2))
+  moneyAsteroidStrike.active = true
+  moneyAsteroidStrike.x = Math.max(4, Math.min(cols - 3, player.x + 8))
+  moneyAsteroidStrike.y = targetY
+  moneyAsteroidStrike.px = -2
+  moneyAsteroidStrike.py = -3
+  moneyAsteroidStrike.vx = 0.19
+  moneyAsteroidStrike.vy = 0.16
+  moneyAsteroidStrike.life = 220
+  eventFeedText = '☄️ Money Asteroid inbound!'
+}
+
+function launchMoneyCar() {
+  if (moneyCarRun.active) return
+  moneyCarRun.active = true
+  moneyCarRun.x = Math.max(0, player.x - 2)
+  moneyCarRun.y = player.y
+  moneyCarRun.px = moneyCarRun.x + 0.5
+  moneyCarRun.mined = 0
+  eventFeedText = '🚘💵 Money Car deployed!'
+}
+
+function updateMoneyAsteroid() {
+  if (!moneyAsteroidStrike.active) return
+  moneyAsteroidStrike.life--
+  moneyAsteroidStrike.px += moneyAsteroidStrike.vx
+  moneyAsteroidStrike.py += moneyAsteroidStrike.vy
+  moneyAsteroidStrike.vy += 0.0028
+
+  const tx = moneyAsteroidStrike.x + 0.5
+  const ty = moneyAsteroidStrike.y + 0.5
+  const impactDist = Math.hypot(tx - moneyAsteroidStrike.px, ty - moneyAsteroidStrike.py)
+
+  if (impactDist < 0.55 || moneyAsteroidStrike.life <= 0) {
+    const cx = moneyAsteroidStrike.x
+    const cy = moneyAsteroidStrike.y
+    addExplosionAnimation(cx, cy, 11, '#ff8c3b')
+    addExplosionAnimation(cx, cy, 8, '#ffe6a1')
+    destroyRandomInRadius(cx, cy, 11, 260)
+    spawnDebris(cx, cy, '#ffb67d', 90)
+    spawnDebris(cx, cy, '#ffd796', 85)
+    spawnMoneyPickup(cx + 0.5, cy + 0.5, 800, '#ffd85e', 0.15)
+    addFloatingText('Money Asteroid Impact! +$800 dropped', cx, cy, '#ffd65f')
+    cameraShake = Math.max(cameraShake, 20)
+    eventFeedText = '☄️💰 Money Asteroid impacted: 260 blocks destroyed, $800 dropped!'
+    moneyAsteroidStrike.active = false
+  }
+}
+
+function updateMoneyCar() {
+  if (!moneyCarRun.active) return
+  moneyCarRun.px += moneyCarRun.speed
+  moneyCarRun.x = Math.floor(moneyCarRun.px)
+
+  if (moneyCarRun.x < cols - 1 && moneyCarRun.mined < 12) {
+    const targets = [
+      { x: moneyCarRun.x, y: moneyCarRun.y },
+      { x: moneyCarRun.x + 1, y: moneyCarRun.y },
+      { x: moneyCarRun.x, y: moneyCarRun.y - 1 },
+      { x: moneyCarRun.x, y: moneyCarRun.y + 1 }
+    ]
+    targets.forEach(target => {
+      if (moneyCarRun.mined >= 12) return
+      if (map[target.y] && map[target.y][target.x] && map[target.y][target.x].hp > 0) {
+        destroyBlock(target.x, target.y, 1)
+        moneyCarRun.mined++
+      }
+    })
+  }
+
+  if (moneyCarRun.x >= cols - 1) {
+    const ex = cols - 1
+    const ey = Math.max(0, Math.min(rows - 1, moneyCarRun.y))
+    addExplosionAnimation(ex, ey, 7, '#ff9b5e')
+    destroyRandomInRadius(ex, ey, 7, 40)
+    spawnDebris(ex, ey, '#ffe0ac', 44)
+    spawnMoneyBurst(ex + 0.4, ey + 0.5, 10, 55, '#ffe999')
+    addFloatingText('Money Car payout!', ex, ey, '#ffe88c')
+    eventFeedText = '🚘💥 Money Car exploded: 40 blocks destroyed + cash piles dropped!'
+    moneyCarRun.active = false
+  }
+}
+
+function drawMoneySpecials() {
+  if (moneyAsteroidStrike.active) {
+    const px = moneyAsteroidStrike.px * tileSize
+    const py = moneyAsteroidStrike.py * tileSize
+    ctx.save()
+    const trail = ctx.createLinearGradient(px - 50, py - 30, px + 20, py + 8)
+    trail.addColorStop(0, 'rgba(255,120,50,0)')
+    trail.addColorStop(0.45, 'rgba(255,120,50,0.65)')
+    trail.addColorStop(1, 'rgba(255,220,140,0.95)')
+    ctx.strokeStyle = trail
+    ctx.lineWidth = 10
+    ctx.beginPath()
+    ctx.moveTo(px - 65, py - 34)
+    ctx.lineTo(px - 5, py - 2)
+    ctx.stroke()
+    const grad = ctx.createRadialGradient(px, py, 3, px, py, 17)
+    grad.addColorStop(0, '#fff9cf')
+    grad.addColorStop(0.5, '#ffb347')
+    grad.addColorStop(1, 'rgba(255,85,20,0.2)')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(px, py, 15, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
+
+  if (moneyCarRun.active) {
+    const px = moneyCarRun.px * tileSize
+    const py = (moneyCarRun.y + 0.5) * tileSize
+    ctx.save()
+    ctx.translate(px, py)
+    ctx.fillStyle = '#7cf4bf'
+    ctx.fillRect(-18, -10, 32, 20)
+    ctx.fillStyle = '#193825'
+    ctx.fillRect(6, -8, 8, 16)
+    ctx.fillStyle = '#0c1c11'
+    ctx.beginPath()
+    ctx.arc(-10, 10, 5, 0, Math.PI * 2)
+    ctx.arc(6, 10, 5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#ffe27a'
+    ctx.font = 'bold 11px Arial'
+    ctx.fillText('$', -3, 3)
+    ctx.restore()
   }
 }
 
@@ -1295,6 +1544,7 @@ function nextLevel() {
     alert('You beat the game!')
     level = 1
     points = 10000
+    money = 12000
   }
   generateLevel()
 }
@@ -1322,6 +1572,7 @@ function createButton(item, isOwned, isEquipped, type) {
     else if (type === 'bomb') handleBombPurchase(item)
     else if (type === 'tornado') handleTornadoPurchase(item)
     else if (type === 'cannon') handleCannonPurchase(item)
+    else if (type === 'money') handleMoneyShopPurchase(item)
     else handleVehicleUpgrade(item)
   }
   return btn
@@ -1396,6 +1647,20 @@ function openCannonShop() {
       name: attached ? `${cannon.name} (Equipped)` : `${cannon.name} (Bought: ${purchased})`
     }
     div.appendChild(createButton(buttonData, false, false, 'cannon'))
+  })
+}
+
+function openMoneyShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Money Shop</h4>'
+  moneyShopItems.forEach(item => {
+    const purchased = purchasedMoneyCounts.get(item.id) || 0
+    const ownedPassive = item.kind === 'passive' && ownedMoneyPassives.has(item.id)
+    const buttonData = {
+      ...item,
+      name: ownedPassive ? `${item.name} (Owned)` : `${item.name} (Bought: ${purchased})`
+    }
+    div.appendChild(createButton(buttonData, ownedPassive, false, 'money'))
   })
 }
 
@@ -1485,6 +1750,46 @@ function handleCannonPurchase(cannon) {
 
   attachedCannonId = cannon.id
   openCannonShop()
+}
+
+function handleMoneyShopPurchase(item) {
+  const alreadyOwnedPassive = item.kind === 'passive' && ownedMoneyPassives.has(item.id)
+  if (alreadyOwnedPassive) {
+    openMoneyShop()
+    return
+  }
+  if (money < item.cost) {
+    openMoneyShop()
+    return
+  }
+
+  money -= item.cost
+  purchasedMoneyCounts.set(item.id, (purchasedMoneyCounts.get(item.id) || 0) + 1)
+
+  if (item.id === 'moneyAsteroid') {
+    launchMoneyAsteroid()
+  }
+  if (item.id === 'moneyCar') {
+    launchMoneyCar()
+  }
+  if (item.id === 'cashRadar') {
+    ownedMoneyPassives.add(item.id)
+    cashRadarLevel = 1
+    addFloatingText('Cash Radar online', player.x, player.y, '#ffe78a')
+  }
+  if (item.id === 'goldenMagnet') {
+    ownedMoneyPassives.add(item.id)
+    goldenMagnetLevel = 1
+    addFloatingText('Golden Magnet active', player.x, player.y, '#fff2a6')
+  }
+  if (item.id === 'bankInterest') {
+    ownedMoneyPassives.add(item.id)
+    bankInterestLevel = 1
+    bankInterestTimer = 0
+    addFloatingText('Bank Interest installed', player.x, player.y, '#d7c9ff')
+  }
+
+  openMoneyShop()
 }
 
 function handleVehicleUpgrade(s) {
@@ -2017,11 +2322,16 @@ function draw() {
   updateMeltAnimations()
   updateCannonProjectiles()
   updateCannonEffects()
+  updateMoneyAsteroid()
+  updateMoneyCar()
+  updateMoneySystems()
   drawParticles()
   drawExplosions()
   drawPowerupWaves()
   drawMeltAnimations()
   drawCannonEffects()
+  drawMoneySpecials()
+  drawMoneyPickups()
   updateTornadoAnimations()
   drawTornadoAnimations()
   drawVehicle()
@@ -2044,6 +2354,7 @@ function draw() {
 function updateUI() {
   levelEl.innerText = level
   pointsEl.innerText = points
+  moneyEl.innerText = money
   document.getElementById('drillName').innerText = currentDrill.name + (temporaryBoostTimer > 0 ? ' [Overdrive]' : '')
   document.getElementById('bodyName').innerText = currentBody.name
   document.getElementById('engineName').innerText = currentEngine.name
@@ -2085,6 +2396,7 @@ window.addEventListener('keydown', e => {
 
 const levelEl = document.getElementById('level')
 const pointsEl = document.getElementById('points')
+const moneyEl = document.getElementById('money')
 
 /* LOOP */
 function gameLoop() {
