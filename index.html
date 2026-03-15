@@ -2044,8 +2044,9 @@ function drawTornadoAnimations() {
     for (let i = 0; i < 9; i++) {
       const layerT = i / 8
       const layerY = py - 52 + i * 12
-      const layerW = (16 + i * 5) * (1 + Math.sin((t.age + i * 7) * 0.08) * 0.12)
-      const layerH = 8 + i * 1.8
+      const funnelScale = 8 - i
+      const layerW = (16 + funnelScale * 5) * (1 + Math.sin((t.age + i * 7) * 0.08) * 0.12)
+      const layerH = 8 + funnelScale * 1.8
       ctx.save()
       ctx.globalAlpha = 0.14 + layerT * 0.07
       ctx.fillStyle = t.color
@@ -2062,7 +2063,8 @@ function drawTornadoAnimations() {
     ctx.beginPath()
     for (let s = 0; s < 6; s++) {
       const sy = py - 42 + s * 12
-      const sx = px + Math.sin((t.age * 0.18) + s) * (4 + s * 2)
+      const swirlRadius = 4 + (5 - s) * 2
+      const sx = px + Math.sin((t.age * 0.18) + s) * swirlRadius
       if (s === 0) ctx.moveTo(sx, sy)
       else ctx.lineTo(sx, sy)
     }
