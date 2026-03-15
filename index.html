@@ -117,6 +117,7 @@
     <button onclick="openBombShop()">Bomb Shop</button>
     <button onclick="openTornadoShop()">Tornado Shop</button>
     <button onclick="openCannonShop()">Cannon Shop</button>
+    <button onclick="openChainsawShop()">Chainsaw Shop</button>
     <button onclick="openMoneyShop()">Money Shop</button>
     <div class="hint">Press R for Super Orb, P for attached bomb, T for attached tornado, C to fire cannon.</div>
     <div id="shopOptions"></div>
@@ -150,6 +151,8 @@ let starFragments = []
 let moneyPickups = []
 let chainsawRotation = 0
 let chainsawDiggerRotation = 0
+let chainsawPulse = 0
+let orbitSawTwist = 0
 
 const moneyAsteroidStrike = {
   active: false,
@@ -277,14 +280,22 @@ const vehicleUpgrades = [
   { id: 'laserCore', name: 'Laser Cannon', cost: 3000, color: '#ff0055', desc: 'Fires laser every 4 seconds.' },
   { id: 'supportRig', name: 'Support Vehicle Bay', cost: 1800, color: '#5bd8ff', desc: 'Deploys helper vehicle for 30s; ends with 18-block blast.' },
   { id: 'superOrb', name: 'Super Orb', cost: 3200, color: '#c580ff', desc: 'Attach orb to vehicle. Press R to destroy 200 blocks.' },
-  { id: 'flamingBody', name: 'Inferno Drive', cost: 2800, color: '#ff7a18', desc: 'Ignites your vehicle for 24s, melting nearby terrain and gradually destroying 316 blocks.' },
-  { id: 'chainsawHalo', name: 'Chainsaw Halo', cost: 4600, color: '#9dff77', desc: 'Adds a spinning chainsaw ring and mini diggers that shred nearby blocks and make cash piles rain out.' }
+  { id: 'flamingBody', name: 'Inferno Drive', cost: 2800, color: '#ff7a18', desc: 'Ignites your vehicle for 24s, melting nearby terrain and gradually destroying 316 blocks.' }
+]
+
+const chainsawUpgrades = [
+  { id: 'chainsawHalo', name: 'Chainsaw Halo', cost: 4600, color: '#9dff77', desc: 'Classic spinning chainsaw ring with mini diggers that shred nearby blocks and drop cash piles.' },
+  { id: 'blockHoleChainsaw', name: 'Block Hole Chainsaw', cost: 5400, color: '#5957ff', desc: 'Spins black holes around your rig that suck blocks inward and destroy up to 50 blocks.' },
+  { id: 'cometChainsaw', name: 'Comet Chainsaw', cost: 5200, color: '#7effde', desc: 'Three comet saws leave glowing tails while carving up to 55 nearby blocks.' },
+  { id: 'prismPetalChainsaw', name: 'Prism Petal Chainsaw', cost: 5800, color: '#ff9cf9', desc: 'Blooming neon saw petals rotate in opposite directions and slice up to 62 blocks.' },
+  { id: 'serpentChainsaw', name: 'Serpent Chainsaw', cost: 6100, color: '#ffb27a', desc: 'A segmented saw serpent coils around your vehicle and chews through up to 70 blocks.' }
 ]
 
 let ownedDrills = new Set(['starter'])
 let ownedBodies = new Set(['basic'])
 let ownedEngines = new Set(['stock'])
 let ownedVehicleUpgrades = new Set()
+let ownedChainsawUpgrades = new Set()
 let currentDrill = drills[0], currentBody = bodies[0], currentEngine = engines[0]
 let hasSuperOrb = false
 const purchasedBombCounts = new Map()
@@ -580,7 +591,7 @@ function drawUpgradeVisuals(isSupport = false) {
     }
   }
 
-  if (ownedVehicleUpgrades.has('chainsawHalo')) {
+  if (ownedChainsawUpgrades.has('chainsawHalo')) {
     const pulse = 0.55 + getUpgradePulse(0.2, 2.2) * 0.45
     const ringRadius = 24 + pulse * 4
     ctx.save()
@@ -623,6 +634,94 @@ function drawUpgradeVisuals(isSupport = false) {
       ctx.moveTo(3.5, -2.6)
       ctx.lineTo(8, 0)
       ctx.lineTo(3.5, 2.6)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+    }
+  }
+
+  if (ownedChainsawUpgrades.has('blockHoleChainsaw')) {
+    for (let i = 0; i < 4; i++) {
+      const a = chainsawRotation * 0.6 + (Math.PI * 2 * i) / 4
+      const r = 17 + Math.sin(chainsawPulse + i) * 4
+      const x = Math.cos(a) * r
+      const y = Math.sin(a) * r
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.fillStyle = 'rgba(20,16,50,0.92)'
+      ctx.beginPath()
+      ctx.arc(0, 0, 5.2, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(138,124,255,0.82)'
+      ctx.beginPath()
+      ctx.arc(0, 0, 7.3, a, a + Math.PI * 1.5)
+      ctx.stroke()
+      ctx.restore()
+    }
+  }
+
+  if (ownedChainsawUpgrades.has('cometChainsaw')) {
+    for (let i = 0; i < 3; i++) {
+      const a = orbitSawTwist + (Math.PI * 2 * i) / 3
+      const x = Math.cos(a) * 22
+      const y = Math.sin(a) * 12
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(a)
+      const grad = ctx.createLinearGradient(-18, 0, 7, 0)
+      grad.addColorStop(0, 'rgba(125,255,224,0)')
+      grad.addColorStop(0.8, 'rgba(125,255,224,0.9)')
+      grad.addColorStop(1, 'rgba(232,255,246,1)')
+      ctx.fillStyle = grad
+      ctx.fillRect(-18, -2, 24, 4)
+      ctx.fillStyle = '#f2fff9'
+      ctx.beginPath()
+      ctx.moveTo(7, 0)
+      ctx.lineTo(-2, -5)
+      ctx.lineTo(-2, 5)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+    }
+  }
+
+  if (ownedChainsawUpgrades.has('prismPetalChainsaw')) {
+    for (let i = 0; i < 5; i++) {
+      const a = -chainsawRotation + (Math.PI * 2 * i) / 5
+      const bloom = 14 + Math.sin(chainsawPulse + i * 0.9) * 7
+      ctx.save()
+      ctx.rotate(a)
+      ctx.fillStyle = i % 2 ? 'rgba(255,157,246,0.52)' : 'rgba(165,235,255,0.45)'
+      ctx.beginPath()
+      ctx.ellipse(bloom, 0, 10, 4, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#fff2ff'
+      ctx.beginPath()
+      ctx.moveTo(bloom + 8, 0)
+      ctx.lineTo(bloom - 2, -4)
+      ctx.lineTo(bloom - 2, 4)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+    }
+  }
+
+  if (ownedChainsawUpgrades.has('serpentChainsaw')) {
+    for (let seg = 0; seg < 7; seg++) {
+      const a = chainsawRotation * 0.45 + seg * 0.56
+      const r = 10 + seg * 4
+      const x = Math.cos(a) * r
+      const y = Math.sin(a) * (5 + seg * 1.6)
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(a)
+      ctx.fillStyle = seg % 2 ? '#ffb56f' : '#ff9459'
+      ctx.fillRect(-4, -3, 8, 6)
+      ctx.fillStyle = '#fff0db'
+      ctx.beginPath()
+      ctx.moveTo(4, 0)
+      ctx.lineTo(10, -3)
+      ctx.lineTo(10, 3)
       ctx.closePath()
       ctx.fill()
       ctx.restore()
@@ -1641,6 +1740,7 @@ function createButton(item, isOwned, isEquipped, type) {
     else if (type === 'tornado') handleTornadoPurchase(item)
     else if (type === 'cannon') handleCannonPurchase(item)
     else if (type === 'money') handleMoneyShopPurchase(item)
+    else if (type === 'chainsaw') handleChainsawPurchase(item)
     else handleVehicleUpgrade(item)
   }
   return btn
@@ -1728,6 +1828,15 @@ function openMoneyShop() {
       name: `${item.name} (Bought: ${purchased})`
     }
     div.appendChild(createButton(buttonData, false, false, 'money'))
+  })
+}
+
+function openChainsawShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Chainsaw Shop</h4>'
+  chainsawUpgrades.forEach(chainsaw => {
+    let owned = ownedChainsawUpgrades.has(chainsaw.id)
+    div.appendChild(createButton(chainsaw, owned, false, 'chainsaw'))
   })
 }
 
@@ -1885,30 +1994,108 @@ function handleVehicleUpgrade(s) {
     addFloatingText('Inferno Drive ignited!', player.x, player.y, '#ffb06f')
     eventFeedText = '🔥 Inferno Drive active: melting terrain for 24s.'
   }
-  if (s.id === 'chainsawHalo') {
-    addFloatingText('Chainsaw Halo engaged!', player.x, player.y, '#caff84')
-    eventFeedText = '🪚 Chainsaw Halo spinning: nearby blocks shredded into cash piles!'
-  }
   openVehicleUpgradeShop()
 }
 
-function updateChainsawHalo() {
-  if (!ownedVehicleUpgrades.has('chainsawHalo')) return
+function handleChainsawPurchase(chainsaw) {
+  if (!ownedChainsawUpgrades.has(chainsaw.id) && points < chainsaw.cost) {
+    openChainsawShop()
+    return
+  }
+
+  if (!ownedChainsawUpgrades.has(chainsaw.id)) {
+    points -= chainsaw.cost
+    ownedChainsawUpgrades.add(chainsaw.id)
+  }
+
+  addFloatingText(`${chainsaw.name} engaged!`, player.x, player.y, chainsaw.color)
+  eventFeedText = `🪚 ${chainsaw.name} active: ${chainsaw.desc}`
+  openChainsawShop()
+}
+
+function updateChainsawSystems() {
+  if (ownedChainsawUpgrades.size <= 0) return
 
   chainsawRotation += 0.26
   chainsawDiggerRotation -= 0.18
+  chainsawPulse += 0.14
+  orbitSawTwist += 0.08
 
-  if (Math.random() < 0.35) {
+  const tryShred = (radius, chance, color, moneyChance = 0.45) => {
+    if (Math.random() > chance) return
     const angle = Math.random() * Math.PI * 2
-    const radius = 1 + Math.random() * 2
     const tx = Math.round(player.x + Math.cos(angle) * radius)
     const ty = Math.round(player.y + Math.sin(angle) * radius)
     if (map[ty] && map[ty][tx] && map[ty][tx].hp > 0) {
       destroyBlock(tx, ty, 1)
-      spawnDebris(tx, ty, '#c9ff90', 4)
-      if (Math.random() < 0.72) {
-        spawnMoneyBurst(tx, ty, 4 + Math.floor(Math.random() * 5), 14 + Math.floor(Math.random() * 11), '#ffe98f')
+      spawnDebris(tx, ty, color, 4)
+      if (Math.random() < moneyChance) {
+        spawnMoneyBurst(tx, ty, 2 + Math.floor(Math.random() * 4), 10 + Math.floor(Math.random() * 10), '#ffe98f')
       }
+    }
+  }
+
+  if (ownedChainsawUpgrades.has('chainsawHalo')) {
+    tryShred(1.9, 0.38, '#c9ff90', 0.72)
+  }
+
+  if (ownedChainsawUpgrades.has('blockHoleChainsaw')) {
+    if (Math.random() < 0.9) {
+      const a = chainsawRotation * 0.6 + Math.random() * 0.7
+      const tx = Math.round(player.x + Math.cos(a) * 3)
+      const ty = Math.round(player.y + Math.sin(a) * 3)
+      spawnDebris(tx, ty, '#6f6cff', 2)
+    }
+    if (Math.random() < 0.22) {
+      destroyRandomInRadius(player.x, player.y, 4, 50)
+      addExplosionAnimation(player.x, player.y, 3.2, '#5e58ff')
+      spawnDebris(player.x, player.y, '#b6adff', 16)
+      eventFeedText = '🕳️ Block Hole Chainsaw collapsed a black-hole orbit and devoured 50 blocks!'
+    }
+  }
+
+  if (ownedChainsawUpgrades.has('cometChainsaw')) {
+    for (let i = 0; i < 3; i++) {
+      const angle = orbitSawTwist + (Math.PI * 2 * i) / 3
+      const tx = Math.round(player.x + Math.cos(angle) * 3.3)
+      const ty = Math.round(player.y + Math.sin(angle) * 1.6)
+      if (map[ty] && map[ty][tx] && map[ty][tx].hp > 0) {
+        destroyBlock(tx, ty, 1)
+      }
+      spawnDebris(tx, ty, '#8fffe4', 2)
+    }
+    if (Math.random() < 0.18) {
+      destroyRandomInRadius(player.x + 1, player.y, 4, 55)
+      addExplosionAnimation(player.x + 1, player.y, 3.8, '#84ffe3')
+    }
+  }
+
+  if (ownedChainsawUpgrades.has('prismPetalChainsaw')) {
+    for (let i = 0; i < 5; i++) {
+      const angle = -chainsawRotation * 0.9 + (Math.PI * 2 * i) / 5
+      const tx = Math.round(player.x + Math.cos(angle) * (2 + Math.sin(chainsawPulse + i) * 1.4))
+      const ty = Math.round(player.y + Math.sin(angle) * (2 + Math.cos(chainsawPulse + i) * 1.4))
+      tryShred(Math.max(1.2, Math.hypot(tx - player.x, ty - player.y)), 0.42, '#ffb2ff', 0.4)
+    }
+    if (Math.random() < 0.16) {
+      destroyRandomInRadius(player.x, player.y, 4, 62)
+      addExplosionAnimation(player.x, player.y, 4.4, '#ff9ef8')
+    }
+  }
+
+  if (ownedChainsawUpgrades.has('serpentChainsaw')) {
+    for (let seg = 0; seg < 7; seg++) {
+      const angle = chainsawRotation * 0.55 + seg * 0.6
+      const tx = Math.round(player.x + Math.cos(angle) * (1.1 + seg * 0.5))
+      const ty = Math.round(player.y + Math.sin(angle) * (0.7 + seg * 0.35))
+      if (map[ty] && map[ty][tx] && map[ty][tx].hp > 0) {
+        destroyBlock(tx, ty, 1)
+      }
+      if (Math.random() < 0.3) spawnDebris(tx, ty, '#ffc79b', 2)
+    }
+    if (Math.random() < 0.15) {
+      destroyRandomInRadius(player.x, player.y, 5, 70)
+      addExplosionAnimation(player.x, player.y, 4.6, '#ffbb84')
     }
   }
 }
@@ -2406,7 +2593,7 @@ function draw() {
   updateCannonEffects()
   updateMoneyAsteroid()
   updateMoneyCar()
-  updateChainsawHalo()
+  updateChainsawSystems()
   updateMoneySystems()
   drawParticles()
   drawExplosions()
