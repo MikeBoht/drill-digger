@@ -153,6 +153,7 @@ let chainsawRotation = 0
 let chainsawDiggerRotation = 0
 let chainsawPulse = 0
 let orbitSawTwist = 0
+const CHAINSAW_DESTRUCTION_MULTIPLIER = 0.7
 
 const moneyAsteroidStrike = {
   active: false,
@@ -1707,7 +1708,7 @@ function updateSupportVehicle() {
 /* LEVEL */
 function nextLevel() {
   level++
-  if (level > 36) {
+  if (level > 186) {
     alert('You beat the game!')
     level = 1
     points = 10000
@@ -2022,7 +2023,7 @@ function updateChainsawSystems() {
   orbitSawTwist += 0.08
 
   const tryShred = (radius, chance, color, moneyChance = 0.45) => {
-    if (Math.random() > chance) return
+    if (Math.random() > chance * CHAINSAW_DESTRUCTION_MULTIPLIER) return
     const angle = Math.random() * Math.PI * 2
     const tx = Math.round(player.x + Math.cos(angle) * radius)
     const ty = Math.round(player.y + Math.sin(angle) * radius)
@@ -2046,11 +2047,11 @@ function updateChainsawSystems() {
       const ty = Math.round(player.y + Math.sin(a) * 3)
       spawnDebris(tx, ty, '#6f6cff', 2)
     }
-    if (Math.random() < 0.22) {
-      destroyRandomInRadius(player.x, player.y, 4, 50)
+    if (Math.random() < 0.22 * CHAINSAW_DESTRUCTION_MULTIPLIER) {
+      destroyRandomInRadius(player.x, player.y, 4, Math.round(50 * CHAINSAW_DESTRUCTION_MULTIPLIER))
       addExplosionAnimation(player.x, player.y, 3.2, '#5e58ff')
       spawnDebris(player.x, player.y, '#b6adff', 16)
-      eventFeedText = '🕳️ Block Hole Chainsaw collapsed a black-hole orbit and devoured 50 blocks!'
+      eventFeedText = '🕳️ Block Hole Chainsaw collapsed a black-hole orbit and devoured a chunk of blocks!'
     }
   }
 
@@ -2059,13 +2060,13 @@ function updateChainsawSystems() {
       const angle = orbitSawTwist + (Math.PI * 2 * i) / 3
       const tx = Math.round(player.x + Math.cos(angle) * 3.3)
       const ty = Math.round(player.y + Math.sin(angle) * 1.6)
-      if (map[ty] && map[ty][tx] && map[ty][tx].hp > 0) {
+      if (Math.random() < CHAINSAW_DESTRUCTION_MULTIPLIER && map[ty] && map[ty][tx] && map[ty][tx].hp > 0) {
         destroyBlock(tx, ty, 1)
       }
       spawnDebris(tx, ty, '#8fffe4', 2)
     }
-    if (Math.random() < 0.18) {
-      destroyRandomInRadius(player.x + 1, player.y, 4, 55)
+    if (Math.random() < 0.18 * CHAINSAW_DESTRUCTION_MULTIPLIER) {
+      destroyRandomInRadius(player.x + 1, player.y, 4, Math.round(55 * CHAINSAW_DESTRUCTION_MULTIPLIER))
       addExplosionAnimation(player.x + 1, player.y, 3.8, '#84ffe3')
     }
   }
@@ -2077,8 +2078,8 @@ function updateChainsawSystems() {
       const ty = Math.round(player.y + Math.sin(angle) * (2 + Math.cos(chainsawPulse + i) * 1.4))
       tryShred(Math.max(1.2, Math.hypot(tx - player.x, ty - player.y)), 0.42, '#ffb2ff', 0.4)
     }
-    if (Math.random() < 0.16) {
-      destroyRandomInRadius(player.x, player.y, 4, 62)
+    if (Math.random() < 0.16 * CHAINSAW_DESTRUCTION_MULTIPLIER) {
+      destroyRandomInRadius(player.x, player.y, 4, Math.round(62 * CHAINSAW_DESTRUCTION_MULTIPLIER))
       addExplosionAnimation(player.x, player.y, 4.4, '#ff9ef8')
     }
   }
@@ -2088,13 +2089,13 @@ function updateChainsawSystems() {
       const angle = chainsawRotation * 0.55 + seg * 0.6
       const tx = Math.round(player.x + Math.cos(angle) * (1.1 + seg * 0.5))
       const ty = Math.round(player.y + Math.sin(angle) * (0.7 + seg * 0.35))
-      if (map[ty] && map[ty][tx] && map[ty][tx].hp > 0) {
+      if (Math.random() < CHAINSAW_DESTRUCTION_MULTIPLIER && map[ty] && map[ty][tx] && map[ty][tx].hp > 0) {
         destroyBlock(tx, ty, 1)
       }
       if (Math.random() < 0.3) spawnDebris(tx, ty, '#ffc79b', 2)
     }
-    if (Math.random() < 0.15) {
-      destroyRandomInRadius(player.x, player.y, 5, 70)
+    if (Math.random() < 0.15 * CHAINSAW_DESTRUCTION_MULTIPLIER) {
+      destroyRandomInRadius(player.x, player.y, 5, Math.round(70 * CHAINSAW_DESTRUCTION_MULTIPLIER))
       addExplosionAnimation(player.x, player.y, 4.6, '#ffbb84')
     }
   }
