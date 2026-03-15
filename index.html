@@ -102,6 +102,7 @@
     <div>Bomb Slot: <span id="bombStatus">Empty</span></div>
     <div>Tornado Slot: <span id="tornadoStatus">Empty</span></div>
     <div>Cannon Slot: <span id="cannonStatus">Empty</span></div>
+    <div>Booster: <span id="boosterStatus">Inactive</span></div>
     <div id="eventFeed">No powerups triggered yet.</div>
     <div id="powerupLegend"></div>
   </div>
@@ -119,6 +120,7 @@
     <button onclick="openCannonShop()">Cannon Shop</button>
     <button onclick="openChainsawShop()">Chainsaw Shop</button>
     <button onclick="openMoneyShop()">Money Shop</button>
+    <button onclick="openBoosterShop()">Booster Shop</button>
     <div class="hint">Press R for Super Orb, P for attached bomb, T for attached tornado, C to fire cannon.</div>
     <div id="shopOptions"></div>
   </div>
@@ -154,6 +156,11 @@ let chainsawDiggerRotation = 0
 let chainsawPulse = 0
 let orbitSawTwist = 0
 const CHAINSAW_DESTRUCTION_MULTIPLIER = 0.7
+
+const boosterState = {
+  activeId: null,
+  timer: 0
+}
 
 const moneyAsteroidStrike = {
   active: false,
@@ -319,6 +326,16 @@ const moneyShopItems = [
   { id: 'vaultCharge', name: 'Vault Charge', cost: 2200, color: '#f8d86d', desc: 'Active: detonate a golden charge around your rig, destroying 110 blocks and dropping a rich money ring.', kind: 'active' },
   { id: 'paydayBeacon', name: 'Payday Beacon', cost: 3000, color: '#b8a8ff', desc: 'Active: call 8 payday strikes across the map. Each strike destroys terrain and drops tile cash piles.', kind: 'active' }
 ]
+
+const boosterShopItems = [
+  { id: 'fireBooster', name: 'Fire Booster', cost: 900, color: '#ff7a1f', speedBonus: 5, duration: 11 * 60, desc: 'Blazing speed burst: move 5 blocks faster with fiery exhaust.' },
+  { id: 'blackHoleBooster', name: 'Black Hole Booster', cost: 1800, color: '#8c66ff', speedBonus: 10, duration: 9 * 60, desc: 'Void slingshot: move 10 blocks faster while gravity rings spin.' },
+  { id: 'frostBooster', name: 'Frost Booster', cost: 1000, color: '#7fdfff', speedBonus: 4, duration: 12 * 60, desc: 'Cryo cruise: move 4 blocks faster with icy contrails.' },
+  { id: 'thunderBooster', name: 'Thunder Booster', cost: 1300, color: '#ffe066', speedBonus: 6, duration: 10 * 60, desc: 'Storm sprint: move 6 blocks faster with crackling arcs.' },
+  { id: 'prismBooster', name: 'Prism Booster', cost: 1600, color: '#ff8cf8', speedBonus: 7, duration: 9 * 60, desc: 'Neon warp: move 7 blocks faster with rainbow afterimages.' }
+]
+
+const purchasedBoosterCounts = new Map()
 
 let attachedCannonId = null
 
@@ -1343,6 +1360,10 @@ function dig(x, y, source = 'player') {
 /* MOVEMENT */
 function move(dx, dy) {
   let steps = currentEngine.ability === 'dash' ? 2 : 1
+  if (boosterState.timer > 0) {
+    const activeBooster = boosterShopItems.find(item => item.id === boosterState.activeId)
+    if (activeBooster) steps += activeBooster.speedBonus
+  }
   for (let i = 0; i < steps; i++) {
     let nx = player.x + dx, ny = player.y + dy
     if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return
@@ -1356,6 +1377,46 @@ function move(dx, dy) {
     player.y = ny
     checkLevelAdvance(previousX)
   }
+}
+
+function drawBoosterEffect() {
+  if (boosterState.timer <= 0) return
+
+  const booster = boosterShopItems.find(item => item.id === boosterState.activeId)
+  if (!booster) return
+
+  const px = player.x * tileSize
+  const py = player.y * tileSize
+  const pulse = 1 + Math.sin(drillAngle * 1.2) * 0.16
+
+  ctx.save()
+  ctx.translate(px, py)
+  ctx.globalAlpha = 0.84
+
+  const ringCount = booster.id === 'blackHoleBooster' ? 3 : 2
+  for (let i = 0; i < ringCount; i++) {
+    const orbit = drillAngle * 0.8 + i * (Math.PI / ringCount)
+    const radius = 18 + i * 8
+    const rx = Math.cos(orbit) * radius * pulse
+    const ry = Math.sin(orbit * 1.2) * radius * 0.82
+    ctx.fillStyle = booster.color
+    ctx.beginPath()
+    ctx.arc(rx, ry, booster.id === 'blackHoleBooster' ? 5 - i : 3.2 + i, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const trailColor = booster.id === 'fireBooster' ? '#ffd4a1' : booster.color
+  for (let i = 0; i < 10; i++) {
+    const t = i / 10
+    const wobble = Math.sin(drillAngle * 1.8 + i) * 5
+    ctx.globalAlpha = 0.52 - t * 0.4
+    ctx.fillStyle = trailColor
+    ctx.beginPath()
+    ctx.arc(-14 - t * 28, wobble, 5 - t * 3.8, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  ctx.restore()
 }
 
 function updateCarBomb() {
@@ -1741,6 +1802,7 @@ function createButton(item, isOwned, isEquipped, type) {
     else if (type === 'tornado') handleTornadoPurchase(item)
     else if (type === 'cannon') handleCannonPurchase(item)
     else if (type === 'money') handleMoneyShopPurchase(item)
+    else if (type === 'booster') handleBoosterPurchase(item)
     else if (type === 'chainsaw') handleChainsawPurchase(item)
     else handleVehicleUpgrade(item)
   }
@@ -1829,6 +1891,20 @@ function openMoneyShop() {
       name: `${item.name} (Bought: ${purchased})`
     }
     div.appendChild(createButton(buttonData, false, false, 'money'))
+  })
+}
+
+function openBoosterShop() {
+  let div = document.getElementById('shopOptions')
+  div.innerHTML = '<h4>Booster Shop</h4>'
+  boosterShopItems.forEach(item => {
+    const purchased = purchasedBoosterCounts.get(item.id) || 0
+    const active = boosterState.activeId === item.id && boosterState.timer > 0
+    const buttonData = {
+      ...item,
+      name: active ? `${item.name} (Active ${Math.ceil(boosterState.timer / 60)}s)` : `${item.name} (Bought: ${purchased})`
+    }
+    div.appendChild(createButton(buttonData, false, false, 'booster'))
   })
 }
 
@@ -1955,6 +2031,21 @@ function handleMoneyShopPurchase(item) {
   }
 
   openMoneyShop()
+}
+
+function handleBoosterPurchase(item) {
+  if (points < item.cost) {
+    openBoosterShop()
+    return
+  }
+
+  points -= item.cost
+  purchasedBoosterCounts.set(item.id, (purchasedBoosterCounts.get(item.id) || 0) + 1)
+  boosterState.activeId = item.id
+  boosterState.timer = item.duration
+  addFloatingText(`${item.name} activated!`, player.x, player.y, item.color)
+  eventFeedText = `⚡ ${item.name} online: +${item.speedBonus} move speed.`
+  openBoosterShop()
 }
 
 function handleVehicleUpgrade(s) {
@@ -2606,6 +2697,7 @@ function draw() {
   updateTornadoAnimations()
   drawTornadoAnimations()
   drawVehicle()
+  drawBoosterEffect()
   drawFloatingTexts()
 
   if (laserUpgrade) {
@@ -2617,6 +2709,13 @@ function draw() {
   }
 
   if (temporaryBoostTimer > 0) temporaryBoostTimer--
+  if (boosterState.timer > 0) {
+    boosterState.timer--
+    if (boosterState.timer <= 0) {
+      boosterState.activeId = null
+      eventFeedText = '⚡ Booster power faded.'
+    }
+  }
   if (orbCooldown > 0) orbCooldown--
   cameraShake *= 0.9
 }
@@ -2639,6 +2738,10 @@ function updateUI() {
   document.getElementById('tornadoStatus').innerText = activeTornado ? `${activeTornado.name} Attached (T)` : 'Empty'
   const activeCannon = cannons.find(item => item.id === attachedCannonId)
   document.getElementById('cannonStatus').innerText = activeCannon ? `${activeCannon.name} Equipped (C)` : 'Empty'
+  const activeBooster = boosterShopItems.find(item => item.id === boosterState.activeId)
+  document.getElementById('boosterStatus').innerText = (activeBooster && boosterState.timer > 0)
+    ? `${activeBooster.name} (${Math.ceil(boosterState.timer / 60)}s)`
+    : 'Inactive'
   document.getElementById('eventFeed').innerText = eventFeedText
 }
 
