@@ -92,7 +92,7 @@
     <h3>Status</h3>
     <div>Level: <span id="level">1</span></div>
     <div>Points: <span id="points">10000</span></div>
-    <div>Money: $<span id="money">12000</span></div>
+    <div>Money: $<span id="money">50000</span></div>
     <div>Drill: <span id="drillName">Starter Drill</span></div>
     <div>Body: <span id="bodyName">Basic Rig</span></div>
     <div>Engine: <span id="engineName">Stock Engine</span></div>
@@ -129,7 +129,7 @@ const tileSize = 40
 const rows = 18
 const cols = 21
 
-let level = 1, points = 10000, money = 12000
+let level = 1, points = 10000, money = 50000
 let player = { x: 0, y: 7 }
 let map = [], particles = [], drillAngle = 0
 let vehicleScale = 1, laserUpgrade = false, laserTimer = 0, drillCount = 1, cameraShake = 0
@@ -148,6 +148,8 @@ let cannonProjectiles = []
 let cannonEffects = []
 let starFragments = []
 let moneyPickups = []
+let chainsawRotation = 0
+let chainsawDiggerRotation = 0
 
 const moneyAsteroidStrike = {
   active: false,
@@ -275,7 +277,8 @@ const vehicleUpgrades = [
   { id: 'laserCore', name: 'Laser Cannon', cost: 3000, color: '#ff0055', desc: 'Fires laser every 4 seconds.' },
   { id: 'supportRig', name: 'Support Vehicle Bay', cost: 1800, color: '#5bd8ff', desc: 'Deploys helper vehicle for 30s; ends with 18-block blast.' },
   { id: 'superOrb', name: 'Super Orb', cost: 3200, color: '#c580ff', desc: 'Attach orb to vehicle. Press R to destroy 200 blocks.' },
-  { id: 'flamingBody', name: 'Inferno Drive', cost: 2800, color: '#ff7a18', desc: 'Ignites your vehicle for 24s, melting nearby terrain and gradually destroying 316 blocks.' }
+  { id: 'flamingBody', name: 'Inferno Drive', cost: 2800, color: '#ff7a18', desc: 'Ignites your vehicle for 24s, melting nearby terrain and gradually destroying 316 blocks.' },
+  { id: 'chainsawHalo', name: 'Chainsaw Halo', cost: 4600, color: '#9dff77', desc: 'Adds a spinning chainsaw ring and mini diggers that shred nearby blocks and make cash piles rain out.' }
 ]
 
 let ownedDrills = new Set(['starter'])
@@ -574,6 +577,55 @@ function drawUpgradeVisuals(isSupport = false) {
       ctx.quadraticCurveTo(fx - fw, fy + fh * 0.6, fx, fy)
       ctx.quadraticCurveTo(fx + fw, fy + fh * 0.6, fx, 13)
       ctx.fill()
+    }
+  }
+
+  if (ownedVehicleUpgrades.has('chainsawHalo')) {
+    const pulse = 0.55 + getUpgradePulse(0.2, 2.2) * 0.45
+    const ringRadius = 24 + pulse * 4
+    ctx.save()
+    ctx.rotate(chainsawRotation)
+    for (let tooth = 0; tooth < 20; tooth++) {
+      const angle = (Math.PI * 2 * tooth) / 20
+      const tx = Math.cos(angle) * ringRadius
+      const ty = Math.sin(angle) * ringRadius
+      ctx.save()
+      ctx.translate(tx, ty)
+      ctx.rotate(angle + Math.PI / 2)
+      ctx.fillStyle = '#f3f7c2'
+      ctx.beginPath()
+      ctx.moveTo(0, -6)
+      ctx.lineTo(8, 0)
+      ctx.lineTo(0, 6)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+    }
+    ctx.strokeStyle = 'rgba(182,255,120,0.78)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(0, 0, ringRadius - 2, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+
+    for (let i = 0; i < 5; i++) {
+      const orbit = chainsawDiggerRotation + (Math.PI * 2 * i) / 5
+      const r = 13 + Math.sin(drillAngle * 0.2 + i) * 1.5
+      const ox = Math.cos(orbit) * r
+      const oy = Math.sin(orbit) * r
+      ctx.save()
+      ctx.translate(ox, oy)
+      ctx.rotate(orbit)
+      ctx.fillStyle = '#9eff7a'
+      ctx.fillRect(-3.5, -3.5, 7, 7)
+      ctx.fillStyle = '#2f3f22'
+      ctx.beginPath()
+      ctx.moveTo(3.5, -2.6)
+      ctx.lineTo(8, 0)
+      ctx.lineTo(3.5, 2.6)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
     }
   }
 
@@ -1152,9 +1204,10 @@ function triggerPowerup(type, x, y) {
     return
   }
   if (type === 'warpCharge') {
+    const previousX = player.x
     player.x = Math.min(cols - 1, player.x + 3)
     spawnDebris(player.x, player.y, '#83ff9f', 16)
-    checkLevelAdvance()
+    checkLevelAdvance(previousX)
   }
 }
 
@@ -1174,8 +1227,9 @@ function dig(x, y, source = 'player') {
     if (currentDrill.ability === 'universe') universe(x, y)
     if (currentEngine.ability === 'shock') explosion(x, y)
     if (currentEngine.ability === 'warp' && source === 'player') {
+      const previousX = player.x
       player.x = Math.min(cols - 1, player.x + 1)
-      checkLevelAdvance()
+      checkLevelAdvance(previousX)
     }
     if (cell.powerup) {
       triggerPowerup(cell.powerup, x, y)
@@ -1197,9 +1251,10 @@ function move(dx, dy) {
       const destroyed = dig(nx, ny, 'player')
       if (!destroyed) return
     }
+    const previousX = player.x
     player.x = nx
     player.y = ny
-    checkLevelAdvance()
+    checkLevelAdvance(previousX)
   }
 }
 
@@ -1557,13 +1612,13 @@ function nextLevel() {
     alert('You beat the game!')
     level = 1
     points = 10000
-    money = 12000
+    money = 50000
   }
   generateLevel()
 }
 
-function checkLevelAdvance() {
-  if (player.x >= cols - 1) nextLevel()
+function checkLevelAdvance(previousX = player.x) {
+  if (previousX < cols - 1 && player.x >= cols - 1) nextLevel()
 }
 
 /* SHOP */
@@ -1830,7 +1885,32 @@ function handleVehicleUpgrade(s) {
     addFloatingText('Inferno Drive ignited!', player.x, player.y, '#ffb06f')
     eventFeedText = '🔥 Inferno Drive active: melting terrain for 24s.'
   }
+  if (s.id === 'chainsawHalo') {
+    addFloatingText('Chainsaw Halo engaged!', player.x, player.y, '#caff84')
+    eventFeedText = '🪚 Chainsaw Halo spinning: nearby blocks shredded into cash piles!'
+  }
   openVehicleUpgradeShop()
+}
+
+function updateChainsawHalo() {
+  if (!ownedVehicleUpgrades.has('chainsawHalo')) return
+
+  chainsawRotation += 0.26
+  chainsawDiggerRotation -= 0.18
+
+  if (Math.random() < 0.35) {
+    const angle = Math.random() * Math.PI * 2
+    const radius = 1 + Math.random() * 2
+    const tx = Math.round(player.x + Math.cos(angle) * radius)
+    const ty = Math.round(player.y + Math.sin(angle) * radius)
+    if (map[ty] && map[ty][tx] && map[ty][tx].hp > 0) {
+      destroyBlock(tx, ty, 1)
+      spawnDebris(tx, ty, '#c9ff90', 4)
+      if (Math.random() < 0.72) {
+        spawnMoneyBurst(tx, ty, 4 + Math.floor(Math.random() * 5), 14 + Math.floor(Math.random() * 11), '#ffe98f')
+      }
+    }
+  }
 }
 
 /* LASER */
@@ -2324,6 +2404,7 @@ function draw() {
   updateCannonEffects()
   updateMoneyAsteroid()
   updateMoneyCar()
+  updateChainsawHalo()
   updateMoneySystems()
   drawParticles()
   drawExplosions()
